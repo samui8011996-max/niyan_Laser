@@ -20,6 +20,7 @@
 <style>
   @font-face{ font-family:'MOBO'; src:url('MOBO-Bold.otf') format('opentype'); font-weight:700; font-style:normal; }
   @font-face{ font-family:'jf-openhuninn'; src:url('jf-openhuninn-2.0.ttf') format('truetype'); font-weight:400; font-style:normal; }
+  @font-face{ font-family:'ChenYuluoyan'; src:url('ChenYuluoyan-2.0-Thin.ttf') format('truetype'); font-weight:300; font-style:normal; }
   :root{
     --bg:#1C1A16; --panel:#26231E; --panel2:#2E2A24; --border:#3B362E;
     --gold:#E8B44A; --gold-dim:#8f7434; --text:#F2EDE2; --muted:#9C9384; --danger:#D97762;
@@ -66,13 +67,20 @@
   #status.ok{color:var(--gold)}
   #missing{font-size:12.5px;color:var(--danger);margin-top:8px}
   #resultGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:16px;margin-top:18px}
-  .r-card{background:var(--panel2);border:1px solid var(--border);border-radius:12px;overflow:hidden}
+  .r-card{position:relative;background:var(--panel2);border:1px solid var(--border);border-radius:12px;overflow:hidden}
   .r-card.missing{border-color:var(--danger)}
-  .r-card .preview{background:#F5F4F0;padding:10px;display:flex;justify-content:center}
+  .r-card.editing{border-color:var(--gold)}
+  .r-card .close-x{position:absolute;top:6px;right:6px;width:22px;height:22px;border-radius:50%;
+    background:rgba(0,0,0,.55);color:#fff;border:none;font-size:14px;line-height:1;cursor:pointer;
+    z-index:2;display:flex;align-items:center;justify-content:center;padding:0}
+  .r-card .close-x:hover{background:var(--danger)}
+  .r-card .preview{background:#F5F4F0;padding:10px;display:flex;justify-content:center;cursor:pointer}
   .r-card .preview svg{max-width:100%;height:auto}
   .r-card .info{padding:10px 12px 12px}
-  .r-card .t{font-size:13px;font-weight:700}
+  .r-card .t{font-size:13px;font-weight:700;cursor:pointer}
   .r-card .m{font-size:11.5px;color:var(--muted);margin-top:3px;line-height:1.6}
+  .r-card .fontedit{margin-top:10px;padding-top:10px;border-top:1px solid var(--border)}
+  .r-card .fontedit label{margin-bottom:3px}
   .r-card .dl{display:flex;gap:6px;margin-top:10px}
   .r-card .dl button{flex:1}
   .head-row{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px}
@@ -210,20 +218,27 @@ const FONT_OPTIONS = [
   {label:"標準黑體", value:"'Helvetica Neue','PingFang TC','Microsoft JhengHei',sans-serif", weight:700},
   {label:"等寬字體", value:"'Courier New',monospace", weight:700},
   {label:"襯線字體", value:"Georgia,'Times New Roman',serif", weight:700},
+  {label:"jf-openhuninn-2.0(純文字款預設)", value:"'jf-openhuninn',sans-serif", weight:400, key:"JF"},
+  {label:"ChenYuluoyan-2.0-Thin(手寫細字)", value:"'ChenYuluoyan',sans-serif", weight:300, key:"CHENYU"},
 ];
 /* 無星座欄位的純文字款式(例如招財貓)固定使用此字體 */
-const PURE_TEXT_FONT = {label:"jf-openhuninn-2.0", value:"'jf-openhuninn',sans-serif", weight:400, key:"JF"};
+const PURE_TEXT_FONT = FONT_OPTIONS.find(f => f.key === "JF");
+const PURE_TEXT_FONT_IDX = FONT_OPTIONS.indexOf(PURE_TEXT_FONT);
 
 const FONT_FACE_SRC = {
   MOBO: {family:"MOBO", weight:700, format:"opentype"},
   JF: {family:"jf-openhuninn", weight:400, format:"truetype"},
+  CHENYU: {family:"ChenYuluoyan", weight:300, format:"truetype"},
 };
+
+/* 刻印一律用黑色,不開放調整 */
+const INK = "#231815";
 
 const DEFAULT_SETTINGS = {
   canvasW:300, canvasH:240,
   iconSize:130, gap1:18, lineLen:220, lineWidth:6, gap2:14,
   fontSize:44, fontIdx:0, letterSpacing:2,
-  ink:"#231815", bgTransparent:true,
+  bgTransparent:true,
 };
 
 /* ── 狀態 ── */
@@ -234,6 +249,7 @@ let fontData = {};
 let allOrders = [];
 let manualOrders = [];
 let manualCounter = 0;
+let editingCardId = null;
 let hasDateColumn = false;
 let settings = {...DEFAULT_SETTINGS};
 let deletedDefaults = [];
@@ -385,7 +401,9 @@ function buildSvg(order, iconSvgString, s){
   const hasText = !!(order.text && order.text.length);
   const showLine = hasIcon && hasText;
 
-  const font = order.zodiac ? (FONT_OPTIONS[s.fontIdx] || FONT_OPTIONS[0]) : PURE_TEXT_FONT;
+  const font = order.fontOverride != null
+    ? (FONT_OPTIONS[order.fontOverride] || FONT_OPTIONS[0])
+    : (order.zodiac ? (FONT_OPTIONS[s.fontIdx] || FONT_OPTIONS[0]) : PURE_TEXT_FONT);
 
   let totalH = 0;
   if (hasIcon) totalH += s.iconSize;
@@ -406,19 +424,19 @@ function buildSvg(order, iconSvgString, s){
     parts += '<svg x="'+(cx - s.iconSize/2)+'" y="'+y+'" width="'+s.iconSize+'" height="'+s.iconSize+'" viewBox="'+info.viewBox+'" preserveAspectRatio="xMidYMid meet">'+info.inner+'</svg>';
     y += s.iconSize;
   } else if (fallbackGlyph){
-    parts += '<text x="'+cx+'" y="'+(y + s.iconSize*0.82)+'" text-anchor="middle" font-size="'+s.iconSize+'" font-family="sans-serif" fill="'+s.ink+'">'+fallbackGlyph+'</text>';
+    parts += '<text x="'+cx+'" y="'+(y + s.iconSize*0.82)+'" text-anchor="middle" font-size="'+s.iconSize+'" font-family="sans-serif" fill="'+INK+'">'+fallbackGlyph+'</text>';
     y += s.iconSize;
   }
 
   if (showLine){
     y += s.gap1;
     const lineY = y + s.lineWidth/2;
-    parts += '<line x1="'+(cx - lineLen/2)+'" y1="'+lineY+'" x2="'+(cx + lineLen/2)+'" y2="'+lineY+'" stroke="'+s.ink+'" stroke-width="'+s.lineWidth+'"/>';
+    parts += '<line x1="'+(cx - lineLen/2)+'" y1="'+lineY+'" x2="'+(cx + lineLen/2)+'" y2="'+lineY+'" stroke="'+INK+'" stroke-width="'+s.lineWidth+'"/>';
     y += s.lineWidth + s.gap2;
   }
 
   if (hasText){
-    parts += '<text x="'+cx+'" y="'+(y + s.fontSize*0.8)+'" text-anchor="middle" font-size="'+s.fontSize+'" font-weight="'+font.weight+'" letter-spacing="'+s.letterSpacing+'" font-family="'+font.value.replace(/"/g,"'")+'" fill="'+s.ink+'">'+esc(order.text)+'</text>';
+    parts += '<text x="'+cx+'" y="'+(y + s.fontSize*0.8)+'" text-anchor="middle" font-size="'+s.fontSize+'" font-weight="'+font.weight+'" letter-spacing="'+s.letterSpacing+'" font-family="'+font.value.replace(/"/g,"'")+'" fill="'+INK+'">'+esc(order.text)+'</text>';
   }
 
   const bg = s.bgTransparent ? "" : '<rect width="100%" height="100%" fill="#ffffff"/>';
@@ -598,7 +616,8 @@ document.getElementById("fontInput").addEventListener("change", async function()
     let key = null;
     if (n.includes("mobo")) key = "MOBO";
     else if (n.includes("openhuninn") || n.includes("jf-")) key = "JF";
-    if (!key){ alert("無法辨識字體檔:"+f.name+"(檔名需包含 MOBO 或 openhuninn)"); continue; }
+    else if (n.includes("chenyu")) key = "CHENYU";
+    if (!key){ alert("無法辨識字體檔:"+f.name+"(檔名需包含 MOBO、openhuninn 或 ChenYuluoyan)"); continue; }
     const dataUrl = await readFileAsDataUrl(f);
     userFontData[key] = dataUrl;
     fontData[key] = dataUrl;
@@ -706,6 +725,12 @@ function removeManualOrder(id){
   manualOrders = manualOrders.filter(o => o.id !== id);
   renderManualList(); updateStatus(); render();
 }
+function removeResult(order){
+  if (String(order.id).startsWith("manual-")){ removeManualOrder(order.id); return; }
+  allOrders = allOrders.filter(o => o.id !== order.id);
+  if (editingCardId === order.id) editingCardId = null;
+  updateStatus(); render();
+}
 function renderManualList(){
   const wrap = document.getElementById("manualList");
   if (!wrap) return;
@@ -731,7 +756,7 @@ const SETTING_FIELDS = [
   {k:"lineLen", label:"分隔線長", type:"num"}, {k:"lineWidth", label:"分隔線粗", type:"num"},
   {k:"gap2", label:"線-字間距", type:"num"}, {k:"fontSize", label:"文字大小", type:"num"},
   {k:"letterSpacing", label:"字距", type:"num"},
-  {k:"fontIdx", label:"字體", type:"font"}, {k:"ink", label:"刻印顏色", type:"color"},
+  {k:"fontIdx", label:"字體", type:"font"},
   {k:"bgTransparent", label:"背景", type:"bg"},
 ];
 function renderSettings(){
@@ -749,9 +774,6 @@ function renderSettings(){
       FONT_OPTIONS.forEach((o,i) => { const op = document.createElement("option"); op.value = i; op.textContent = o.label; inp.appendChild(op); });
       inp.value = settings.fontIdx;
       inp.addEventListener("change", () => { settings.fontIdx = Number(inp.value); saveSet(); render(); });
-    } else if (f.type === "color"){
-      inp = document.createElement("input"); inp.type = "color"; inp.value = settings.ink;
-      inp.addEventListener("input", () => { settings.ink = inp.value; saveSet(); render(); });
     } else {
       inp = document.createElement("select");
       inp.innerHTML = '<option value="1">透明</option><option value="0">白色</option>';
@@ -788,8 +810,9 @@ function render(){
   const grid = document.getElementById("resultGrid");
   grid.innerHTML = "";
   rs.forEach((r, idx) => {
+    const isEditing = editingCardId === r.order.id;
     const card = document.createElement("div");
-    card.className = "r-card" + (r.missing ? " missing" : "");
+    card.className = "r-card" + (r.missing ? " missing" : "") + (isEditing ? " editing" : "");
     const prev = document.createElement("div");
     prev.className = "preview"; prev.innerHTML = r.svg;
     const info = document.createElement("div");
@@ -799,18 +822,42 @@ function render(){
     info.innerHTML = '<div class="t"></div><div class="m"></div>';
     info.querySelector(".t").textContent = r.order.text || (r.order.zodiac ? "("+r.order.zodiac+" 僅圖案)" : "(無文字)");
     info.querySelector(".m").innerHTML = esc(meta) + "<br>" + esc(r.order.name + idTag);
+
+    const toggleEdit = () => { editingCardId = isEditing ? null : r.order.id; render(); };
+    prev.addEventListener("click", toggleEdit);
+    info.querySelector(".t").addEventListener("click", toggleEdit);
+
+    const closeBtn = document.createElement("button");
+    closeBtn.className = "close-x"; closeBtn.textContent = "×"; closeBtn.title = "刪除這一筆";
+    closeBtn.onclick = e => { e.stopPropagation(); removeResult(r.order); };
+
+    if (isEditing){
+      const defaultIdx = r.order.zodiac ? settings.fontIdx : PURE_TEXT_FONT_IDX;
+      const fontEdit = document.createElement("div");
+      fontEdit.className = "fontedit";
+      const lab = document.createElement("label"); lab.textContent = "這一筆的字體";
+      const sel = document.createElement("select");
+      FONT_OPTIONS.forEach((o,i) => { const op = document.createElement("option"); op.value = i; op.textContent = o.label; sel.appendChild(op); });
+      sel.value = r.order.fontOverride != null ? r.order.fontOverride : defaultIdx;
+      sel.addEventListener("click", e => e.stopPropagation());
+      sel.addEventListener("change", () => { r.order.fontOverride = Number(sel.value); render(); });
+      fontEdit.append(lab, sel);
+      info.appendChild(fontEdit);
+    }
+
     const dl = document.createElement("div"); dl.className = "dl";
     const b0 = document.createElement("button"); b0.className = "btn-sm active"; b0.textContent = "雷雕用 SVG";
     b0.title = "壓平成單一圖片的 SVG,匯入 xTool 等雷雕軟體不會跑位變形";
-    b0.onclick = () => downloadFlatSvg(r.svg, fileNameFor(r.order), settings.canvasW, settings.canvasH);
+    b0.onclick = e => { e.stopPropagation(); downloadFlatSvg(r.svg, fileNameFor(r.order), settings.canvasW, settings.canvasH); };
     const b1 = document.createElement("button"); b1.className = "btn-sm"; b1.textContent = "原始向量SVG";
     b1.title = "保留文字與圖案為向量物件,適合在 Illustrator 等軟體編輯,但匯入部分雷雕軟體可能跑位變形";
-    b1.onclick = () => downloadSvg(r.svg, fileNameFor(r.order));
+    b1.onclick = e => { e.stopPropagation(); downloadSvg(r.svg, fileNameFor(r.order)); };
     const b2 = document.createElement("button"); b2.className = "btn-sm"; b2.textContent = "PNG";
-    b2.onclick = () => downloadPng(r.svg, fileNameFor(r.order));
+    b2.onclick = e => { e.stopPropagation(); downloadPng(r.svg, fileNameFor(r.order)); };
+    dl.addEventListener("click", e => e.stopPropagation());
     dl.append(b0, b1, b2);
     info.appendChild(dl);
-    card.append(prev, info);
+    card.append(prev, info, closeBtn);
     grid.appendChild(card);
   });
 }
