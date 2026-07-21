@@ -121,6 +121,7 @@
       <button class="btn-sm tab active" data-tab="sheet">Google 試算表</button>
       <button class="btn-sm tab" data-tab="paste">貼上資料</button>
       <button class="btn-sm tab" data-tab="file">上傳檔案</button>
+      <button class="btn-sm tab" data-tab="manual">手動輸入</button>
     </div>
     <div class="tabpane show" id="pane-sheet">
       <div class="row">
@@ -137,6 +138,25 @@
     <div class="tabpane" id="pane-file">
       <input type="file" id="dataInput" accept=".xlsx,.xls,.csv,.tsv" hidden>
       <button class="btn" onclick="dataInput.click()">選擇 .xlsx / .csv 檔案</button>
+    </div>
+    <div class="tabpane" id="pane-manual">
+      <p class="hint">自己選一個素材庫裡的圖案、填上要刻印的文字,按「加入」就會用步驟③的版面設定生成一筆雷雕圖,不需要訂單資料。</p>
+      <div class="row" style="align-items:flex-end">
+        <div style="flex:1 1 160px">
+          <label>圖案(可不選)</label>
+          <select id="manualZodiac"></select>
+        </div>
+        <div style="flex:2 1 220px">
+          <label>刻印文字</label>
+          <input id="manualText" type="text" placeholder="要刻印的文字">
+        </div>
+        <div style="flex:0 0 80px">
+          <label>數量</label>
+          <input id="manualQty" type="number" min="1" value="1">
+        </div>
+        <button class="btn" onclick="addManualOrder()">＋ 加入</button>
+      </div>
+      <div id="manualList" style="margin-top:12px"></div>
     </div>
     <div class="row" id="dateFilterRow" style="display:none;margin-top:10px">
       <label style="display:flex;align-items:center;gap:6px;margin:0;color:var(--text);font-size:12.5px">
@@ -212,6 +232,8 @@ let iconSizes = {};
 let iconGaps = {};
 let fontData = {};
 let allOrders = [];
+let manualOrders = [];
+let manualCounter = 0;
 let hasDateColumn = false;
 let settings = {...DEFAULT_SETTINGS};
 let deletedDefaults = [];
@@ -301,9 +323,12 @@ function rowsToOrders(rows){
 
 function visibleOrders(){
   const cb = document.getElementById("todayOnly");
-  if (!hasDateColumn || !cb || !cb.checked) return allOrders;
-  const t = todayParts();
-  return allOrders.filter(o => isSameDate(parseDateParts(o.date), t));
+  let base = allOrders;
+  if (hasDateColumn && cb && cb.checked){
+    const t = todayParts();
+    base = allOrders.filter(o => isSameDate(parseDateParts(o.date), t));
+  }
+  return [...base, ...manualOrders];
 }
 
 /* ── SVG 處理與生成 ── */
@@ -539,10 +564,11 @@ function applyRows(rows){
   render();
 }
 function updateStatus(){
-  if (!allOrders.length){ setStatus("沒有找到含「刻印文字」的資料列"); return; }
+  if (!allOrders.length && !manualOrders.length){ setStatus("沒有找到含「刻印文字」的資料列"); return; }
   const vis = visibleOrders();
-  let msg = "成功解析 "+allOrders.length+" 筆訂單";
-  if (hasDateColumn && document.getElementById("todayOnly").checked) msg += "(今日 "+vis.length+" 筆)";
+  let msg = allOrders.length ? ("成功解析 "+allOrders.length+" 筆訂單") : "";
+  if (manualOrders.length) msg += (msg ? "，" : "") + "手動輸入 "+manualOrders.length+" 筆";
+  if (hasDateColumn && document.getElementById("todayOnly").checked) msg += "(顯示 "+vis.length+" 筆)";
   setStatus(msg, true);
 }
 document.getElementById("todayOnly").addEventListener("change", () => { updateStatus(); render(); });
@@ -648,6 +674,53 @@ function renderLibrary(){
     };
     card.append(thumb, nameInput, sizeRow, del);
     grid.appendChild(card);
+  });
+  renderManualIconSelect();
+}
+
+/* ── 手動輸入 UI ── */
+function renderManualIconSelect(){
+  const sel = document.getElementById("manualZodiac");
+  if (!sel) return;
+  const current = sel.value;
+  sel.innerHTML = "";
+  const none = document.createElement("option"); none.value = ""; none.textContent = "(無圖案,純文字)";
+  sel.appendChild(none);
+  Object.keys(library).sort().forEach(k => {
+    const op = document.createElement("option"); op.value = k; op.textContent = k;
+    sel.appendChild(op);
+  });
+  if ([...sel.options].some(o => o.value === current)) sel.value = current;
+}
+function addManualOrder(){
+  const zodiac = document.getElementById("manualZodiac").value;
+  const text = document.getElementById("manualText").value.trim();
+  const qty = Math.max(1, parseInt(document.getElementById("manualQty").value, 10) || 1);
+  if (!zodiac && !text){ alert("請至少選擇圖案或輸入文字"); return; }
+  manualCounter++;
+  manualOrders.push({id:"manual-"+manualCounter, name:"", orderId:"", date:"", zodiac, color:"", text, qty});
+  document.getElementById("manualText").value = "";
+  renderManualList(); updateStatus(); render();
+}
+function removeManualOrder(id){
+  manualOrders = manualOrders.filter(o => o.id !== id);
+  renderManualList(); updateStatus(); render();
+}
+function renderManualList(){
+  const wrap = document.getElementById("manualList");
+  if (!wrap) return;
+  wrap.innerHTML = "";
+  manualOrders.forEach(o => {
+    const row = document.createElement("div");
+    row.className = "row"; row.style.marginTop = "6px";
+    const label = document.createElement("span");
+    label.style.flex = "1";
+    label.textContent = (o.zodiac ? "["+o.zodiac+"] " : "") + (o.text || "(無文字)") + (o.qty > 1 ? " x"+o.qty : "");
+    const del = document.createElement("button");
+    del.className = "btn-sm"; del.textContent = "移除";
+    del.onclick = () => removeManualOrder(o.id);
+    row.append(label, del);
+    wrap.appendChild(row);
   });
 }
 
