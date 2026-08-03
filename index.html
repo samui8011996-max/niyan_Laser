@@ -166,11 +166,12 @@
       </div>
       <div id="manualList" style="margin-top:12px"></div>
     </div>
-    <div class="row" id="dateFilterRow" style="display:none;margin-top:10px">
+    <div class="row" id="dateFilterRow" style="display:none;margin-top:10px;align-items:center;gap:10px">
       <label style="display:flex;align-items:center;gap:6px;margin:0;color:var(--text);font-size:12.5px">
         <input type="checkbox" id="todayOnly" style="width:auto" checked>
-        只生成今天(<span id="todayLabel"></span>)的訂單
+        只生成指定日期的訂單
       </label>
+      <input type="date" id="filterDate" style="width:auto">
     </div>
     <p id="status"></p>
     <p id="missing"></p>
@@ -298,6 +299,11 @@ function todayParts(){
   return {y:t.getFullYear(), m:t.getMonth()+1, d:t.getDate()};
 }
 function isSameDate(a,b){ return !!a && !!b && a.y===b.y && a.m===b.m && a.d===b.d; }
+function selectedFilterParts(){
+  const input = document.getElementById("filterDate");
+  const parts = input && input.value ? parseDateParts(input.value) : null;
+  return parts || todayParts();
+}
 
 function rowsToOrders(rows){
   if (!rows || !rows.length) return [];
@@ -341,7 +347,7 @@ function visibleOrders(){
   const cb = document.getElementById("todayOnly");
   let base = allOrders;
   if (hasDateColumn && cb && cb.checked){
-    const t = todayParts();
+    const t = selectedFilterParts();
     base = allOrders.filter(o => isSameDate(parseDateParts(o.date), t));
   }
   return [...base, ...manualOrders];
@@ -569,11 +575,13 @@ function applyRows(rows){
   hasDateColumn = allOrders.some(o => parseDateParts(o.date));
   const filterRow = document.getElementById("dateFilterRow");
   const todayOnlyCb = document.getElementById("todayOnly");
+  const filterDateInput = document.getElementById("filterDate");
   filterRow.style.display = hasDateColumn ? "" : "none";
   if (hasDateColumn){
-    const t = todayParts();
-    document.getElementById("todayLabel").textContent =
-      t.y+"/"+String(t.m).padStart(2,"0")+"/"+String(t.d).padStart(2,"0");
+    if (!filterDateInput.value){
+      const t = todayParts();
+      filterDateInput.value = t.y+"-"+String(t.m).padStart(2,"0")+"-"+String(t.d).padStart(2,"0");
+    }
     todayOnlyCb.checked = true;
   } else {
     todayOnlyCb.checked = false;
@@ -590,6 +598,7 @@ function updateStatus(){
   setStatus(msg, true);
 }
 document.getElementById("todayOnly").addEventListener("change", () => { updateStatus(); render(); });
+document.getElementById("filterDate").addEventListener("change", () => { updateStatus(); render(); });
 
 /* ── 素材庫 UI ── */
 document.getElementById("svgInput").addEventListener("change", async function(){
