@@ -15,8 +15,13 @@
 <meta name="apple-mobile-web-app-title" content="雷雕刻印">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/STLLoader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/geometries/DecalGeometry.js"></script>
 <script src="default-library.js"></script>
 <script src="default-fonts.js"></script>
+<script src="default-model.js"></script>
 <style>
   @font-face{ font-family:'MOBO'; src:url('MOBO-Bold.otf') format('opentype'); font-weight:700; font-style:normal; }
   @font-face{ font-family:'jf-openhuninn'; src:url('jf-openhuninn-2.0.ttf') format('truetype'); font-weight:400; font-style:normal; }
@@ -96,6 +101,36 @@
   details.acc[open]>summary::after{transform:rotate(90deg)}
   details.acc>summary:hover{color:#fff}
   details.acc>.acc-body{padding:0 18px 18px}
+
+  /* 頁面分頁(刻印產生 / 雷雕模擬) */
+  .pagetabs{max-width:1200px;margin:0 auto;padding:16px 20px 0;display:flex;gap:10px}
+  .ptab{background:var(--panel2);color:var(--muted);border:1px solid var(--border);
+    border-radius:9px;padding:10px 18px;font-size:13px;font-weight:800;letter-spacing:2px;cursor:pointer}
+  .ptab.active{background:var(--gold);color:#221C0E;border-color:var(--gold)}
+  .page{display:none}
+  .page.show{display:grid}
+
+  /* 雷雕模擬頁 */
+  .sim-layout{display:grid;grid-template-columns:1fr 320px;gap:20px;align-items:start}
+  @media (max-width:860px){ .sim-layout{grid-template-columns:1fr} }
+  #simViewport{position:relative;background:var(--panel2);border-radius:12px;overflow:hidden;
+    height:520px;border:1px solid var(--border)}
+  #simViewport canvas{display:block;width:100%;height:100%}
+  .sim-hint-overlay{position:absolute;left:10px;bottom:10px;font-size:11.5px;color:#cfcfcf;
+    background:rgba(0,0,0,.4);padding:5px 9px;border-radius:6px;pointer-events:none}
+  .sim-panel .blk{margin-bottom:18px}
+  .sim-panel .blk:last-child{margin-bottom:0}
+  .sim-panel h3{font-size:12px;font-weight:800;letter-spacing:2px;color:var(--gold);margin:0 0 8px}
+  .chiprow{display:flex;gap:8px;flex-wrap:wrap}
+  .chiprow .btn-sm{padding:7px 12px}
+  .mm-row{display:flex;gap:10px}
+  .mm-row>div{flex:1}
+  .lbl-row{display:flex;justify-content:space-between;align-items:center;
+    font-size:11px;color:var(--muted);letter-spacing:1px;margin-bottom:4px}
+  .lbl-row span{color:var(--gold);font-weight:700;letter-spacing:0}
+  input[type=range]{width:100%;accent-color:var(--gold);background:transparent}
+  .sim-check{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted);margin-top:6px}
+  .sim-check input{width:auto}
 </style>
 </head>
 <body>
@@ -105,7 +140,12 @@
   <span class="sub">星座圖案 ＋ 分隔線 ＋ 刻印文字 → SVG</span>
 </header>
 
-<main>
+<div class="pagetabs">
+  <button class="ptab active" data-page="generate">刻印產生</button>
+  <button class="ptab" data-page="simulate">雷雕模擬</button>
+</div>
+
+<main id="page-generate" class="page show">
   <!-- ① 素材庫 -->
   <details class="acc">
     <summary>① 素材庫(星座 SVG 小圖)</summary>
@@ -196,6 +236,71 @@
     <p class="hint" style="margin-top:10px">每筆結果可下載三種檔案:<b>雷雕用 SVG</b>(推薦,已壓平成單一圖片,匯入 xTool 等雷雕軟體不會跑位變形)、<b>原始向量SVG</b>(保留可編輯的文字與路徑,適合在 Illustrator 等設計軟體開啟,但部分雷雕軟體的 SVG 解析器不支援內嵌字體與巢狀圖案,匯入後可能會跑位/變形)、以及 <b>PNG</b>。「下載全部」會批次下載雷雕用版本。</p>
     <p class="hint" id="emptyHint" style="margin-top:16px">讀取訂單後,每一筆的預覽會顯示在這裡。</p>
     <div id="resultGrid"></div>
+  </section>
+</main>
+
+<main id="page-simulate" class="page">
+  <section>
+    <h2>雷雕模擬預覽</h2>
+    <p class="hint">把刻印圖案模擬貼到公仔背面,下單前先確認位置、大小是否合適(僅供預覽估算,實際雷雕效果以現場成品為準)。滑鼠拖曳可旋轉視角、滾輪可縮放。</p>
+    <div class="sim-layout">
+      <div>
+        <div id="simViewport">
+          <div class="sim-hint-overlay">拖曳旋轉 · 滾輪縮放</div>
+        </div>
+      </div>
+      <div class="sim-panel">
+        <div class="blk">
+          <h3>公仔高度</h3>
+          <div class="chiprow" id="simSizeChips">
+            <button class="btn-sm" data-cm="4.5">4.5 cm</button>
+            <button class="btn-sm active" data-cm="6">6 cm</button>
+            <button class="btn-sm" data-cm="8">8 cm</button>
+            <button class="btn-sm" data-cm="15">15 cm</button>
+          </div>
+          <label style="margin-top:10px">公仔顏色</label>
+          <input type="color" id="simColor" value="#F4C430">
+          <label class="sim-check"><input type="checkbox" id="simZUp" checked>模型顯示側躺/倒下時取消勾選</label>
+        </div>
+
+        <div class="blk">
+          <h3>刻印圖案</h3>
+          <label>從生成結果選擇(步驟④)</label>
+          <select id="simSourceSelect"></select>
+          <label style="margin-top:8px">或直接輸入刻印文字(不需訂單)</label>
+          <input id="simText" type="text" placeholder="要模擬的刻印文字">
+          <div class="row" style="margin-top:8px">
+            <input type="file" id="simSvgInput" accept=".svg" hidden>
+            <button class="btn-sm" onclick="simSvgInput.click()">＋ 上傳自己的 SVG</button>
+            <button class="btn-sm" id="simClearUpload" style="display:none">改用上方選擇</button>
+          </div>
+        </div>
+
+        <div class="blk">
+          <h3>圖案尺寸(等比縮放)</h3>
+          <div class="mm-row">
+            <div>
+              <label>長度/寬度(mm)</label>
+              <input id="simWidthMM" type="number" value="20" min="1" step="0.5">
+              <input id="simWidthSlider" type="range" min="3" max="100" step="0.5" value="20" style="margin-top:6px">
+            </div>
+            <div>
+              <label>高度(mm)</label>
+              <input id="simHeightMM" type="number" min="1" step="0.5">
+              <input id="simHeightSlider" type="range" min="3" max="100" step="0.5" style="margin-top:6px">
+            </div>
+          </div>
+        </div>
+
+        <div class="blk">
+          <h3>刻印位置</h3>
+          <label class="lbl-row">環繞角度(找出背面)<span id="simAngleVal">180°</span></label>
+          <input id="simAngle" type="range" min="0" max="359" value="180">
+          <label class="lbl-row" style="margin-top:10px">上下位置<span id="simVertVal">40%</span></label>
+          <input id="simVert" type="range" min="10" max="90" value="40">
+        </div>
+      </div>
+    </div>
   </section>
 </main>
 
@@ -841,6 +946,7 @@ function currentResults(){
 
 function render(){
   const rs = currentResults();
+  renderSimSourceOptions();
   document.getElementById("resultTitle").textContent = "④ 生成結果" + (rs.length ? "("+rs.length+" 筆)" : "");
   document.getElementById("dlAllBtn").style.display = rs.length ? "" : "none";
   document.getElementById("emptyHint").style.display = rs.length ? "none" : "";
@@ -903,7 +1009,7 @@ function render(){
   });
 }
 
-/* ── 分頁切換 ── */
+/* ── 分頁切換(步驟②內的資料來源分頁) ── */
 document.querySelectorAll(".tab").forEach(btn => {
   btn.addEventListener("click", () => {
     document.querySelectorAll(".tab").forEach(b => b.classList.remove("active"));
@@ -911,6 +1017,326 @@ document.querySelectorAll(".tab").forEach(btn => {
     btn.classList.add("active");
     document.getElementById("pane-"+btn.dataset.tab).classList.add("show");
   });
+});
+
+/* ── 頁面分頁切換(刻印產生 / 雷雕模擬) ── */
+document.querySelectorAll(".ptab").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll(".ptab").forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+    const page = btn.dataset.page;
+    document.getElementById("page-generate").classList.toggle("show", page === "generate");
+    document.getElementById("page-simulate").classList.toggle("show", page === "simulate");
+    if (page === "simulate"){
+      initSim();
+      requestAnimationFrame(resizeSimRenderer);
+      startSimLoop();
+    } else {
+      stopSimLoop();
+    }
+  });
+});
+
+/* ══════════════ 雷雕模擬(3D 預覽:把 SVG 貼到公仔背面) ══════════════
+   模型(luckycat.stl)已預先轉成 base64 打包進 default-model.js,直接用 STLLoader 解析,
+   不需要 fetch 本機檔案,雙擊開啟 index.html(file://)也能正常載入,不受瀏覽器本機檔案限制。 */
+let simInited = false;
+let simScene, simCamera, simRenderer, simControls, simMesh, simDecalMesh, simRAF = null;
+let simUploadedSvg = null;   // {name, text} 使用者上傳的 SVG,優先權最高
+let simFigurineCM = 6;
+let simAspect = 1;           // 目前圖案的寬/高比,供高度/寬度互相換算
+
+function base64ToArrayBuffer(b64){
+  const bin = atob(b64);
+  const arr = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+  return arr.buffer;
+}
+
+function initSim(){
+  if (simInited) return;
+  simInited = true;
+  const vp = document.getElementById("simViewport");
+
+  simScene = new THREE.Scene();
+  simScene.background = new THREE.Color(0x2E2A24);
+  simCamera = new THREE.PerspectiveCamera(40, Math.max(1, vp.clientWidth)/Math.max(1, vp.clientHeight), 0.1, 5000);
+  simCamera.position.set(90, 110, 180);
+
+  simRenderer = new THREE.WebGLRenderer({antialias:true});
+  simRenderer.outputEncoding = THREE.sRGBEncoding;
+  simRenderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+  vp.insertBefore(simRenderer.domElement, vp.firstChild);
+
+  simControls = new THREE.OrbitControls(simCamera, simRenderer.domElement);
+  simControls.target.set(0, 40, 0);
+  simControls.enableDamping = true;
+  simControls.dampingFactor = 0.1;
+
+  simScene.add(new THREE.HemisphereLight(0xffffff, 0x555555, 0.9));
+  const dir1 = new THREE.DirectionalLight(0xffffff, 0.8); dir1.position.set(120,200,150); simScene.add(dir1);
+  const dir2 = new THREE.DirectionalLight(0xffffff, 0.3); dir2.position.set(-120,80,-100); simScene.add(dir2);
+
+  const ground = new THREE.Mesh(
+    new THREE.CircleGeometry(220, 48),
+    new THREE.MeshStandardMaterial({color:0x26231E, roughness:1})
+  );
+  ground.rotation.x = -Math.PI/2;
+  simScene.add(ground);
+
+  loadSimModel();
+  resizeSimRenderer();
+  window.addEventListener("resize", resizeSimRenderer);
+}
+
+function resizeSimRenderer(){
+  if (!simRenderer) return;
+  const vp = document.getElementById("simViewport");
+  const w = vp.clientWidth, h = vp.clientHeight;
+  if (!w || !h) return;
+  simRenderer.setSize(w, h);
+  simCamera.aspect = w / h;
+  simCamera.updateProjectionMatrix();
+}
+
+function loadSimModel(){
+  const buf = base64ToArrayBuffer(DEFAULT_MODEL_STL_B64);
+  const geometry = new THREE.STLLoader().parse(buf);
+  geometry.computeBoundingBox();
+  const center = geometry.boundingBox.getCenter(new THREE.Vector3());
+  geometry.translate(-center.x, -center.y, -center.z);
+  const material = new THREE.MeshStandardMaterial({color:document.getElementById("simColor").value, roughness:0.85, metalness:0.02});
+  simMesh = new THREE.Mesh(geometry, material);
+  simScene.add(simMesh);
+  applySimOrientationAndScale();
+}
+
+/* 公仔朝向+真實比例縮放:高度以 mm 為單位,依所選公分數等比縮放整個模型,並讓底部貼齊地面 */
+function applySimOrientationAndScale(){
+  if (!simMesh) return;
+  simMesh.quaternion.identity();
+  if (document.getElementById("simZUp").checked){
+    // 把座標軸循環置換過來,修正這顆模型的朝向(預設打勾就是正確站姿),
+    // 再繞站立後的垂直軸(世界 Y 軸)逆時針轉 90 度,調整公仔面朝的方向
+    const correction = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1,1,1).normalize(), -2*Math.PI/3);
+    const spin = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0), Math.PI/2);
+    correction.premultiply(spin);
+    simMesh.quaternion.copy(correction);
+  }
+  simMesh.scale.set(1,1,1);
+  simMesh.position.set(0,0,0);
+  simMesh.updateMatrixWorld(true);
+
+  const bb = new THREE.Box3().setFromObject(simMesh);
+  const heightMM = simFigurineCM * 10;
+  const scale = heightMM / ((bb.max.y - bb.min.y) || 1);
+  simMesh.scale.setScalar(scale);
+  simMesh.updateMatrixWorld(true);
+
+  const bb2 = new THREE.Box3().setFromObject(simMesh);
+  simMesh.position.y = -bb2.min.y;
+  simMesh.updateMatrixWorld(true);
+
+  const bb3 = new THREE.Box3().setFromObject(simMesh);
+  if (simControls) simControls.target.set(0, bb3.max.y * 0.5, 0);
+
+  updateSimDecal();
+}
+
+/* 圖案來源:上傳的 SVG > 手動輸入文字(重用純文字款排版) > 步驟④生成結果下拉選單 */
+function currentSimSvgInfo(){
+  if (simUploadedSvg) return simUploadedSvg.text;
+  const manualText = document.getElementById("simText").value.trim();
+  if (manualText){
+    const {svg} = buildSvg({text:manualText, zodiac:"", fontOverride:null}, null, settings);
+    return svg;
+  }
+  const sel = document.getElementById("simSourceSelect");
+  const idx = sel.value;
+  if (idx === "") return null;
+  const rs = currentResults();
+  return rs[idx] ? rs[idx].svg : null;
+}
+
+function svgAspectFromString(svgStr){
+  const info = extractSvgInfo(svgStr);
+  if (!info) return 1;
+  const parts = info.viewBox.trim().split(/\s+/).map(Number);
+  return (parts[2] && parts[3]) ? parts[2] / parts[3] : 1;
+}
+
+function renderSimSourceOptions(){
+  const sel = document.getElementById("simSourceSelect");
+  if (!sel) return;
+  const current = sel.value;
+  const rs = currentResults();
+  sel.innerHTML = '<option value="">(不使用,改用下方文字或上傳檔案)</option>';
+  rs.forEach((r, i) => {
+    const op = document.createElement("option");
+    op.value = i;
+    op.textContent = (r.order.text || (r.order.zodiac ? "["+r.order.zodiac+"]" : "圖案")) + (r.order.name ? "・"+r.order.name : "");
+    sel.appendChild(op);
+  });
+  if ([...sel.options].some(o => o.value === current)) sel.value = current;
+  else if (rs.length && !simUploadedSvg && !document.getElementById("simText").value.trim()) sel.value = "0";
+  if (simInited) updateSimDecal();
+}
+
+/* 尺寸一律以「基準軸 + 基準值」推算,不直接讀畫面上的數字當來源,
+   這樣不管圖案第一次載入、或換了比例不同的圖案,兩個欄位永遠是照目前的長寬比重新算出來,
+   不會出現「剛載入時還沒同步、看起來被拉長」的狀況。預設以長度(寬度)20mm 為基準。 */
+let simSizeAxis = "w";   // "w" = 以長度/寬度為基準,"h" = 以高度為基準
+let simSizeMM = 20;
+function syncSimSizeFields(){
+  let widthMM, heightMM;
+  if (simSizeAxis === "w"){ widthMM = simSizeMM; heightMM = simSizeMM / simAspect; }
+  else { heightMM = simSizeMM; widthMM = simSizeMM * simAspect; }
+  document.getElementById("simWidthMM").value = widthMM.toFixed(1);
+  document.getElementById("simHeightMM").value = heightMM.toFixed(1);
+  document.getElementById("simWidthSlider").value = widthMM;
+  document.getElementById("simHeightSlider").value = heightMM;
+  return {widthMM, heightMM};
+}
+
+function rasterizeSvgToTexture(svgStr, widthMM, heightMM){
+  return new Promise(resolve => {
+    const pxPerMM = 12;
+    const w = Math.max(8, Math.round(widthMM * pxPerMM));
+    const h = Math.max(8, Math.round(heightMM * pxPerMM));
+    const blob = new Blob([svgStr], {type:"image/svg+xml"});
+    const url = URL.createObjectURL(blob);
+    const img = new Image();
+    img.onload = () => {
+      const c = document.createElement("canvas");
+      c.width = w; c.height = h;
+      c.getContext("2d").drawImage(img, 0, 0, w, h);
+      URL.revokeObjectURL(url);
+      const tex = new THREE.CanvasTexture(c);
+      tex.encoding = THREE.sRGBEncoding;
+      tex.needsUpdate = true;
+      resolve(tex);
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); resolve(null); };
+    img.src = url;
+  });
+}
+
+let simDecalToken = 0;
+async function updateSimDecal(){
+  if (!simMesh) return;
+  const token = ++simDecalToken;
+  const svgStr = currentSimSvgInfo();
+  if (!svgStr){
+    if (simDecalMesh){ simScene.remove(simDecalMesh); simDecalMesh.geometry.dispose(); simDecalMesh.material.dispose(); simDecalMesh = null; }
+    return;
+  }
+  simAspect = svgAspectFromString(svgStr) || 1;
+  const {widthMM, heightMM} = syncSimSizeFields();
+
+  const tex = await rasterizeSvgToTexture(svgStr, widthMM, heightMM);
+  if (token !== simDecalToken || !tex) return; // 避免非同步結果與後續更新互相覆蓋
+
+  const angleDeg = Number(document.getElementById("simAngle").value);
+  const vertPct = Number(document.getElementById("simVert").value) / 100;
+  const bb = new THREE.Box3().setFromObject(simMesh);
+  const cy = bb.min.y + (bb.max.y - bb.min.y) * vertPct;
+  const radius = Math.max(bb.max.x - bb.min.x, bb.max.z - bb.min.z) * 1.5 + 80;
+  const rad = angleDeg * Math.PI / 180;
+  const origin = new THREE.Vector3(Math.sin(rad) * radius, cy, Math.cos(rad) * radius);
+  const target = new THREE.Vector3(0, cy, 0);
+  const dir = target.clone().sub(origin).normalize();
+
+  const raycaster = new THREE.Raycaster(origin, dir);
+  const hits = raycaster.intersectObject(simMesh);
+  if (token !== simDecalToken || !hits.length) return;
+  const hit = hits[0];
+
+  const normalMatrix = new THREE.Matrix3().getNormalMatrix(simMesh.matrixWorld);
+  const worldNormal = hit.face.normal.clone().applyMatrix3(normalMatrix).normalize();
+  const dummy = new THREE.Object3D();
+  dummy.position.copy(hit.point);
+  dummy.lookAt(hit.point.clone().add(worldNormal));
+
+  const depthMM = Math.max(6, Math.min(widthMM, heightMM) * 0.4);
+  const size = new THREE.Vector3(widthMM, heightMM, depthMM);
+  const decalGeo = new THREE.DecalGeometry(simMesh, hit.point, dummy.rotation.clone(), size);
+  const decalMat = new THREE.MeshStandardMaterial({
+    map:tex, transparent:true, depthTest:true, depthWrite:false,
+    polygonOffset:true, polygonOffsetFactor:-4, roughness:0.6, metalness:0
+  });
+
+  if (simDecalMesh){ simScene.remove(simDecalMesh); simDecalMesh.geometry.dispose(); simDecalMesh.material.dispose(); }
+  simDecalMesh = new THREE.Mesh(decalGeo, decalMat);
+  simScene.add(simDecalMesh);
+}
+
+function simRenderLoop(){
+  simRAF = requestAnimationFrame(simRenderLoop);
+  if (simControls) simControls.update();
+  if (simRenderer && simScene && simCamera) simRenderer.render(simScene, simCamera);
+}
+function startSimLoop(){ if (!simRAF) simRenderLoop(); }
+function stopSimLoop(){ if (simRAF){ cancelAnimationFrame(simRAF); simRAF = null; } }
+
+document.getElementById("simSizeChips").querySelectorAll(".btn-sm").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.getElementById("simSizeChips").querySelectorAll(".btn-sm").forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+    simFigurineCM = parseFloat(btn.dataset.cm);
+    applySimOrientationAndScale();
+  });
+});
+document.getElementById("simColor").addEventListener("input", e => {
+  if (simMesh) simMesh.material.color.set(e.target.value);
+});
+document.getElementById("simZUp").addEventListener("change", applySimOrientationAndScale);
+document.getElementById("simSourceSelect").addEventListener("change", () => {
+  simUploadedSvg = null;
+  document.getElementById("simText").value = "";
+  document.getElementById("simClearUpload").style.display = "none";
+  updateSimDecal();
+});
+document.getElementById("simText").addEventListener("input", () => {
+  if (document.getElementById("simText").value.trim()){
+    simUploadedSvg = null;
+    document.getElementById("simClearUpload").style.display = "none";
+  }
+  updateSimDecal();
+});
+document.getElementById("simSvgInput").addEventListener("change", async function(){
+  const f = this.files[0]; this.value = "";
+  if (!f) return;
+  simUploadedSvg = {name:f.name, text: await f.text()};
+  document.getElementById("simText").value = "";
+  document.getElementById("simClearUpload").style.display = "";
+  updateSimDecal();
+});
+document.getElementById("simClearUpload").addEventListener("click", () => {
+  simUploadedSvg = null;
+  document.getElementById("simClearUpload").style.display = "none";
+  updateSimDecal();
+});
+function onSimWidthInput(v){
+  simSizeAxis = "w";
+  simSizeMM = parseFloat(v) || 20;
+  updateSimDecal();
+}
+function onSimHeightInput(v){
+  simSizeAxis = "h";
+  simSizeMM = parseFloat(v) || 20;
+  updateSimDecal();
+}
+document.getElementById("simWidthMM").addEventListener("input", e => onSimWidthInput(e.target.value));
+document.getElementById("simWidthSlider").addEventListener("input", e => onSimWidthInput(e.target.value));
+document.getElementById("simHeightMM").addEventListener("input", e => onSimHeightInput(e.target.value));
+document.getElementById("simHeightSlider").addEventListener("input", e => onSimHeightInput(e.target.value));
+document.getElementById("simAngle").addEventListener("input", () => {
+  document.getElementById("simAngleVal").textContent = document.getElementById("simAngle").value + "°";
+  updateSimDecal();
+});
+document.getElementById("simVert").addEventListener("input", () => {
+  document.getElementById("simVertVal").textContent = document.getElementById("simVert").value + "%";
+  updateSimDecal();
 });
 
 /* ── 初始化 ── */
