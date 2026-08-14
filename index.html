@@ -132,6 +132,15 @@
   input[type=range]{width:100%;accent-color:var(--gold);background:transparent}
   .sim-check{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted);margin-top:6px}
   .sim-check input{width:auto}
+  .pill-toggle{display:inline-flex;align-items:center;gap:8px;cursor:pointer;user-select:none;margin-top:10px}
+  .pill-toggle input{position:absolute;opacity:0;width:0;height:0}
+  .pill-toggle .track{width:38px;height:21px;flex:none;background:var(--panel2);border:1px solid var(--border);
+    border-radius:999px;position:relative;transition:background .15s}
+  .pill-toggle .track::after{content:'';position:absolute;top:2px;left:2px;width:15px;height:15px;
+    border-radius:50%;background:var(--muted);transition:transform .15s,background .15s}
+  .pill-toggle input:checked + .track{background:var(--gold);border-color:var(--gold)}
+  .pill-toggle input:checked + .track::after{transform:translateX(17px);background:#221C0E}
+  .pill-toggle .lbl{font-size:12.5px;color:var(--muted)}
 </style>
 </head>
 <body>
@@ -288,14 +297,25 @@
 
         <div class="blk">
           <h3>刻印圖案</h3>
-          <label>從生成結果選擇(步驟④)</label>
-          <select id="simSourceSelect"></select>
-          <label style="margin-top:8px">或直接輸入刻印文字(不需訂單)</label>
-          <input id="simText" type="text" placeholder="要模擬的刻印文字">
-          <div class="row" style="margin-top:8px">
+          <div class="chiprow" id="simPatternSrcChips">
+            <button class="btn-sm active" data-src="orders">訂單結果</button>
+            <button class="btn-sm" data-src="text">手動輸入文字</button>
+            <button class="btn-sm" data-src="upload">上傳 SVG</button>
+          </div>
+          <div id="simSrcOrders" style="margin-top:10px">
+            <div class="row" style="align-items:center;margin-bottom:8px">
+              <input id="simOrderDate" type="date" style="width:auto">
+              <button class="btn-sm" id="simLoadDate">↻ 讀取該日訂單</button>
+            </div>
+            <select id="simSourceSelect"></select>
+          </div>
+          <div id="simSrcText" style="margin-top:10px;display:none">
+            <input id="simText" type="text" placeholder="要模擬的刻印文字">
+          </div>
+          <div id="simSrcUpload" style="margin-top:10px;display:none">
             <input type="file" id="simSvgInput" accept=".svg" hidden>
-            <button class="btn-sm" onclick="simSvgInput.click()">＋ 上傳自己的 SVG</button>
-            <button class="btn-sm" id="simClearUpload" style="display:none">改用上方選擇</button>
+            <button class="btn-sm" onclick="simSvgInput.click()">選擇 SVG 檔案</button>
+            <p class="hint" id="simUploadedName" style="margin:6px 0 0"></p>
           </div>
         </div>
 
@@ -313,6 +333,11 @@
               <input id="simHeightSlider" type="range" min="3" max="100" step="0.5" style="margin-top:6px">
             </div>
           </div>
+          <label class="pill-toggle">
+            <input type="checkbox" id="simShowFrame">
+            <span class="track"></span>
+            <span class="lbl">顯示正方形參考框</span>
+          </label>
         </div>
 
         <div class="blk mode-cat">
@@ -1297,11 +1322,15 @@ function applySimOrientationAndScale(){
   }
 }
 
-/* 圖案來源:上傳的 SVG > 手動輸入文字(重用純文字款排版) > 步驟④生成結果下拉選單 */
+/* 圖案來源由「刻印圖案」那排按鈕明確指定(訂單結果/手動輸入文字/上傳 SVG),互斥、不用猜優先順序 */
+let simPatternSrc = "orders";
 function currentSimSvgInfo(){
-  if (simUploadedSvg) return simUploadedSvg.text;
-  const manualText = document.getElementById("simText").value.trim();
-  if (manualText){
+  if (simPatternSrc === "upload"){
+    return simUploadedSvg ? simUploadedSvg.text : null;
+  }
+  if (simPatternSrc === "text"){
+    const manualText = document.getElementById("simText").value.trim();
+    if (!manualText) return null;
     const {svg} = buildSvg({text:manualText, zodiac:"", fontOverride:null}, null, settings);
     return svg;
   }
@@ -1324,7 +1353,7 @@ function renderSimSourceOptions(){
   if (!sel) return;
   const current = sel.value;
   const rs = currentResults();
-  sel.innerHTML = '<option value="">(不使用,改用下方文字或上傳檔案)</option>';
+  sel.innerHTML = '<option value="">(請選擇一筆)</option>';
   rs.forEach((r, i) => {
     const op = document.createElement("option");
     op.value = i;
@@ -1332,7 +1361,7 @@ function renderSimSourceOptions(){
     sel.appendChild(op);
   });
   if ([...sel.options].some(o => o.value === current)) sel.value = current;
-  else if (rs.length && !simUploadedSvg && !document.getElementById("simText").value.trim()) sel.value = "0";
+  else if (rs.length) sel.value = "0";
   if (simInited) updateSimDecal();
 }
 
@@ -1379,12 +1408,31 @@ function clearSimDecal(){
   if (simDecalMesh){ simScene.remove(simDecalMesh); simDecalMesh.geometry.dispose(); simDecalMesh.material.dispose(); simDecalMesh = null; }
 }
 
+let simFrameMesh = null;
+let simShowFrame = false;
+function clearSimFrame(){
+  if (simFrameMesh){ simScene.remove(simFrameMesh); simFrameMesh.geometry.dispose(); simFrameMesh.material.dispose(); simFrameMesh = null; }
+}
+/* 顯示一個正方形(邊長=長寬較大值)的參考框,跟刻印貼圖用同一個位置/朝向,
+   方便看整塊圖案實際會占用多大的正方形範圍 */
+function placeSimFrame(position, rotationEuler, side){
+  clearSimFrame();
+  if (!simShowFrame) return;
+  const geo = new THREE.EdgesGeometry(new THREE.PlaneGeometry(side, side));
+  const mat = new THREE.LineBasicMaterial({color:0x00E5FF, depthTest:false});
+  simFrameMesh = new THREE.LineSegments(geo, mat);
+  simFrameMesh.position.copy(position);
+  simFrameMesh.rotation.copy(rotationEuler);
+  simFrameMesh.renderOrder = 999;
+  simScene.add(simFrameMesh);
+}
+
 let simDecalToken = 0;
 async function updateSimDecal(){
   if (!simMesh) return;
   const token = ++simDecalToken;
   const svgStr = currentSimSvgInfo();
-  if (!svgStr){ clearSimDecal(); return; }
+  if (!svgStr){ clearSimDecal(); clearSimFrame(); return; }
   simAspect = svgAspectFromString(svgStr) || 1;
   const {widthMM, heightMM} = syncSimSizeFields();
 
@@ -1428,6 +1476,7 @@ function placeDecalOnCat(tex, widthMM, heightMM, token){
   clearSimDecal();
   simDecalMesh = new THREE.Mesh(decalGeo, decalMat);
   simScene.add(simDecalMesh);
+  placeSimFrame(hit.point.clone().add(worldNormal.clone().multiplyScalar(0.3)), dummy.rotation, Math.max(widthMM, heightMM));
 }
 
 /* 木片底座:上表面是平的,直接放一片貼齊表面的平面貼圖就好,不需要用曲面貼合 */
@@ -1443,6 +1492,7 @@ function placeDecalOnWood(tex, widthMM, heightMM){
   const topY = simWoodMesh.position.y + simWoodMesh.geometry.parameters.height / 2;
   simDecalMesh.position.set(simWoodOffsetX, topY + 0.05, simWoodOffsetZ);
   simScene.add(simDecalMesh);
+  placeSimFrame(new THREE.Vector3(simWoodOffsetX, topY + 0.1, simWoodOffsetZ), new THREE.Euler(-Math.PI/2, 0, 0), Math.max(widthMM, heightMM));
 }
 
 function simRenderLoop(){
@@ -1472,30 +1522,35 @@ document.getElementById("simColor").addEventListener("input", e => {
   }
 });
 document.getElementById("simZUp").addEventListener("change", applySimOrientationAndScale);
-document.getElementById("simSourceSelect").addEventListener("change", () => {
-  simUploadedSvg = null;
-  document.getElementById("simText").value = "";
-  document.getElementById("simClearUpload").style.display = "none";
-  updateSimDecal();
+/* 讀取「simOrderDate」欄位指定的那一天的訂單(預設是今天,但可以改選其他日期) */
+async function loadSimOrdersForSelectedDate(){
+  const dateInput = document.getElementById("simOrderDate");
+  const filterDateInput = document.getElementById("filterDate");
+  const todayOnlyCb = document.getElementById("todayOnly");
+  if (filterDateInput && dateInput.value) filterDateInput.value = dateInput.value;
+  if (todayOnlyCb) todayOnlyCb.checked = true;
+  await loadFromSheet();
+}
+document.getElementById("simPatternSrcChips").querySelectorAll(".btn-sm").forEach(btn => {
+  btn.addEventListener("click", async () => {
+    document.getElementById("simPatternSrcChips").querySelectorAll(".btn-sm").forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+    simPatternSrc = btn.dataset.src;
+    document.getElementById("simSrcOrders").style.display = simPatternSrc === "orders" ? "" : "none";
+    document.getElementById("simSrcText").style.display = simPatternSrc === "text" ? "" : "none";
+    document.getElementById("simSrcUpload").style.display = simPatternSrc === "upload" ? "" : "none";
+    if (simPatternSrc === "orders") await loadSimOrdersForSelectedDate();
+    updateSimDecal();
+  });
 });
-document.getElementById("simText").addEventListener("input", () => {
-  if (document.getElementById("simText").value.trim()){
-    simUploadedSvg = null;
-    document.getElementById("simClearUpload").style.display = "none";
-  }
-  updateSimDecal();
-});
+document.getElementById("simLoadDate").addEventListener("click", loadSimOrdersForSelectedDate);
+document.getElementById("simSourceSelect").addEventListener("change", updateSimDecal);
+document.getElementById("simText").addEventListener("input", updateSimDecal);
 document.getElementById("simSvgInput").addEventListener("change", async function(){
   const f = this.files[0]; this.value = "";
   if (!f) return;
   simUploadedSvg = {name:f.name, text: await f.text()};
-  document.getElementById("simText").value = "";
-  document.getElementById("simClearUpload").style.display = "";
-  updateSimDecal();
-});
-document.getElementById("simClearUpload").addEventListener("click", () => {
-  simUploadedSvg = null;
-  document.getElementById("simClearUpload").style.display = "none";
+  document.getElementById("simUploadedName").textContent = "已上傳:" + f.name;
   updateSimDecal();
 });
 function onSimWidthInput(v){
@@ -1512,6 +1567,10 @@ document.getElementById("simWidthMM").addEventListener("input", e => onSimWidthI
 document.getElementById("simWidthSlider").addEventListener("input", e => onSimWidthInput(e.target.value));
 document.getElementById("simHeightMM").addEventListener("input", e => onSimHeightInput(e.target.value));
 document.getElementById("simHeightSlider").addEventListener("input", e => onSimHeightInput(e.target.value));
+document.getElementById("simShowFrame").addEventListener("change", e => {
+  simShowFrame = e.target.checked;
+  updateSimDecal();
+});
 document.getElementById("simAngle").addEventListener("input", () => {
   document.getElementById("simAngleVal").textContent = document.getElementById("simAngle").value + "°";
   updateSimDecal();
@@ -1552,6 +1611,10 @@ renderLibrary();
 renderSettings();
 renderFontStatus();
 render();
+(function(){
+  const t = todayParts();
+  document.getElementById("simOrderDate").value = t.y+"-"+String(t.m).padStart(2,"0")+"-"+String(t.d).padStart(2,"0");
+})();
 </script>
 </body>
 </html>
