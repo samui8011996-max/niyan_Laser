@@ -22,6 +22,7 @@
 <script src="default-library.js"></script>
 <script src="default-fonts.js"></script>
 <script src="default-model.js"></script>
+<script src="default-wood.js"></script>
 <style>
   @font-face{ font-family:'MOBO'; src:url('MOBO-Bold.otf') format('opentype'); font-weight:700; font-style:normal; }
   @font-face{ font-family:'jf-openhuninn'; src:url('jf-openhuninn-2.0.ttf') format('truetype'); font-weight:400; font-style:normal; }
@@ -251,6 +252,14 @@
       </div>
       <div class="sim-panel">
         <div class="blk">
+          <h3>模擬對象</h3>
+          <div class="chiprow" id="simModeChips">
+            <button class="btn-sm active" data-mode="cat">招財貓公仔</button>
+            <button class="btn-sm" data-mode="wood">木片底座</button>
+          </div>
+        </div>
+
+        <div class="blk mode-cat">
           <h3>公仔高度</h3>
           <div class="chiprow" id="simSizeChips">
             <button class="btn-sm" data-cm="4.5">4.5 cm</button>
@@ -258,9 +267,23 @@
             <button class="btn-sm" data-cm="8">8 cm</button>
             <button class="btn-sm" data-cm="15">15 cm</button>
           </div>
-          <label style="margin-top:10px">公仔顏色</label>
-          <input type="color" id="simColor" value="#F4C430">
           <label class="sim-check"><input type="checkbox" id="simZUp" checked>模型顯示側躺/倒下時取消勾選</label>
+        </div>
+
+        <div class="blk mode-wood" style="display:none">
+          <h3>木片底座尺寸</h3>
+          <p class="hint" style="margin:0 0 10px">厚度固定 1.2 cm,文字直接刻在上方平面。</p>
+          <div class="chiprow" id="simWoodSizeChips">
+            <button class="btn-sm active" data-cm="7">7 cm</button>
+            <button class="btn-sm" data-cm="10">10 cm</button>
+          </div>
+          <label style="margin-top:8px">自訂直徑(cm)</label>
+          <input id="simWoodDiameter" type="number" value="7" min="1" step="0.1">
+        </div>
+
+        <div class="blk">
+          <h3>顏色</h3>
+          <input type="color" id="simColor" value="#F4C430">
         </div>
 
         <div class="blk">
@@ -281,8 +304,8 @@
           <div class="mm-row">
             <div>
               <label>長度/寬度(mm)</label>
-              <input id="simWidthMM" type="number" value="20" min="1" step="0.5">
-              <input id="simWidthSlider" type="range" min="3" max="100" step="0.5" value="20" style="margin-top:6px">
+              <input id="simWidthMM" type="number" value="25" min="1" step="0.5">
+              <input id="simWidthSlider" type="range" min="3" max="100" step="0.5" value="25" style="margin-top:6px">
             </div>
             <div>
               <label>高度(mm)</label>
@@ -292,12 +315,20 @@
           </div>
         </div>
 
-        <div class="blk">
+        <div class="blk mode-cat">
           <h3>刻印位置</h3>
           <label class="lbl-row">環繞角度(找出背面)<span id="simAngleVal">180°</span></label>
           <input id="simAngle" type="range" min="0" max="359" value="180">
           <label class="lbl-row" style="margin-top:10px">上下位置<span id="simVertVal">40%</span></label>
           <input id="simVert" type="range" min="10" max="90" value="40">
+        </div>
+
+        <div class="blk mode-wood" style="display:none">
+          <h3>刻印位置</h3>
+          <label class="lbl-row">左右位置(mm)<span id="simWoodXVal">0</span></label>
+          <input id="simWoodX" type="range" min="-25" max="25" step="1" value="0">
+          <label class="lbl-row" style="margin-top:10px">上下位置(mm)<span id="simWoodZVal">20</span></label>
+          <input id="simWoodZ" type="range" min="-25" max="25" step="1" value="20">
         </div>
       </div>
     </div>
@@ -1042,6 +1073,11 @@ document.querySelectorAll(".ptab").forEach(btn => {
    不需要 fetch 本機檔案,雙擊開啟 index.html(file://)也能正常載入,不受瀏覽器本機檔案限制。 */
 let simInited = false;
 let simScene, simCamera, simRenderer, simControls, simMesh, simDecalMesh, simRAF = null;
+let simCatMesh, simWoodMesh;
+let simMode = "cat";          // "cat" = 招財貓公仔,"wood" = 木片底座
+let simCatColor = "#F4C430";
+let simWoodColor = "#FFFFFF";  // 白色=不額外染色,直接顯示 wood.png 木紋原色
+let simWoodOffsetX = 0, simWoodOffsetZ = 20;  // 木片刻印文字的左右/上下微調(mm)
 let simUploadedSvg = null;   // {name, text} 使用者上傳的 SVG,優先權最高
 let simFigurineCM = 6;
 let simAspect = 1;           // 目前圖案的寬/高比,供高度/寬度互相換算
@@ -1084,7 +1120,9 @@ function initSim(){
   ground.rotation.x = -Math.PI/2;
   simScene.add(ground);
 
-  loadSimModel();
+  buildCatMesh();
+  buildWoodMesh();
+  setSimMode("cat");
   resizeSimRenderer();
   window.addEventListener("resize", resizeSimRenderer);
 }
@@ -1099,48 +1137,164 @@ function resizeSimRenderer(){
   simCamera.updateProjectionMatrix();
 }
 
-function loadSimModel(){
+function buildCatMesh(){
   const buf = base64ToArrayBuffer(DEFAULT_MODEL_STL_B64);
   const geometry = new THREE.STLLoader().parse(buf);
   geometry.computeBoundingBox();
   const center = geometry.boundingBox.getCenter(new THREE.Vector3());
   geometry.translate(-center.x, -center.y, -center.z);
-  const material = new THREE.MeshStandardMaterial({color:document.getElementById("simColor").value, roughness:0.85, metalness:0.02});
-  simMesh = new THREE.Mesh(geometry, material);
-  simScene.add(simMesh);
+  const material = new THREE.MeshStandardMaterial({color:simCatColor, roughness:0.85, metalness:0.02});
+  simCatMesh = new THREE.Mesh(geometry, material);
+  simScene.add(simCatMesh);
   applySimOrientationAndScale();
+}
+
+/* wood.png 是一張合成圖:左邊是圓形切面木紋、右邊是一條直立的樹皮側邊紋,
+   兩塊圖案中間跟四周都是留白。實際像素範圍(在 1024x848 的圖上量出來的):
+   切面 x:50-693 y:127-741(寬644、高615),樹皮 x:766-911 y:50-806。
+   用 canvas 各裁一塊出來當獨立材質,上蓋/下蓋用切面、側邊用樹皮並讓它繞一圈重複貼。
+   zoomPct:切面裁切再往內縮多少百分比(避免邊緣白邊露出來);sideRepeat:側邊重複貼幾次。 */
+const WOOD_CAP_SRC = {x:50, y:127, w:644, h:615};
+const WOOD_SIDE_SRC = {x:766, y:50, w:146, h:757};
+function loadWoodTextures(zoomPct, sideRepeat){
+  return new Promise(resolve => {
+    const img = new Image();
+    img.onload = () => {
+      const mx = Math.round(WOOD_CAP_SRC.w * zoomPct / 100);
+      const my = Math.round(WOOD_CAP_SRC.h * zoomPct / 100);
+      const cw = WOOD_CAP_SRC.w - 2*mx, ch = WOOD_CAP_SRC.h - 2*my;
+      const capCanvas = document.createElement("canvas");
+      capCanvas.width = cw; capCanvas.height = ch;
+      capCanvas.getContext("2d").drawImage(img, WOOD_CAP_SRC.x+mx, WOOD_CAP_SRC.y+my, cw, ch, 0, 0, cw, ch);
+      const capTex = new THREE.CanvasTexture(capCanvas);
+      capTex.encoding = THREE.sRGBEncoding;
+
+      // 樹皮素材原本是直立的長條(寬146高757),但側邊要繞著圓周(橫向)重複貼,
+      // 所以裁下來後轉90度變成橫的再用,紋路方向才會對。
+      // 旋轉後,接縫出現在原圖的「上下邊」(旋轉後變成左右邊),那裡有一點模糊的淺色鋸齒,
+      // 所以裁切時上下各往內縮一點吃掉那圈淺色邊;畫布也先鋪一層木頭色底,避免旋轉邊角露出縫隙。
+      const sideTrim = Math.round(WOOD_SIDE_SRC.h * 0.05);
+      const sy = WOOD_SIDE_SRC.y + sideTrim;
+      const sh = WOOD_SIDE_SRC.h - 2 * sideTrim;
+      const sideCanvas = document.createElement("canvas");
+      sideCanvas.width = sh; sideCanvas.height = WOOD_SIDE_SRC.w;
+      const sctx = sideCanvas.getContext("2d");
+      sctx.fillStyle = "#6b4a30";
+      sctx.fillRect(0, 0, sideCanvas.width, sideCanvas.height);
+      sctx.translate(sideCanvas.width/2, sideCanvas.height/2);
+      sctx.rotate(Math.PI/2);
+      sctx.drawImage(img, WOOD_SIDE_SRC.x, sy, WOOD_SIDE_SRC.w, sh,
+        -WOOD_SIDE_SRC.w/2, -sh/2, WOOD_SIDE_SRC.w, sh);
+      const sideTex = new THREE.CanvasTexture(sideCanvas);
+      // 樹皮照片本身不是無縫材質,用一般重複貼會在每段接縫處出現明顯色差線;
+      // 改用「鏡射重複」讓相鄰兩段互為鏡像,接縫處色彩一定連續,就不會再看到那條接痕
+      sideTex.wrapS = sideTex.wrapT = THREE.MirroredRepeatWrapping;
+      sideTex.repeat.set(sideRepeat, 1);
+      sideTex.encoding = THREE.sRGBEncoding;
+
+      resolve({capTex, sideTex});
+    };
+    img.onerror = () => resolve(null);
+    img.src = WOOD_TEXTURE_DATAURL;
+  });
+}
+
+const WOOD_CAP_ZOOM_PCT = 1;    // 切面裁切縮放(%),試過覺得 1% 最剛好,固定下來不再開放調整
+const WOOD_SIDE_REPEAT = 2;     // 側邊木紋重複次數,試過覺得 2 次最剛好,固定下來不再開放調整
+let simWoodDiameterCM = 7;      // 木片直徑(cm),可自訂
+const WOOD_THICKNESS_MM = 12;   // 厚度固定 1.2cm
+
+/* 重新套用木紋(建立木片 mesh 之後呼叫一次即可,裁切/重複次數已固定) */
+function applyWoodTextures(){
+  if (!simWoodMesh) return;
+  const [sideMat, capMat] = simWoodMesh.material;
+  loadWoodTextures(WOOD_CAP_ZOOM_PCT, WOOD_SIDE_REPEAT).then(res => {
+    if (!res) return;
+    if (capMat.map) capMat.map.dispose();
+    if (sideMat.map) sideMat.map.dispose();
+    capMat.map = res.capTex; capMat.needsUpdate = true;
+    sideMat.map = res.sideTex; sideMat.needsUpdate = true;
+  });
+}
+
+/* 木片底座:直徑可調(預設 7cm)、厚度固定 1.2cm 的圓柱,底面貼地,文字刻在正上方那個平面上。
+   圓柱預設分 3 組(側邊、上蓋、下蓋),先用純色頂著,等 wood.png 裁切好再換上材質。 */
+function buildWoodMesh(){
+  const radius = simWoodDiameterCM * 10 / 2; // cm→mm 再取半徑
+  const geometry = new THREE.CylinderGeometry(radius, radius, WOOD_THICKNESS_MM, 64);
+  const sideMat = new THREE.MeshStandardMaterial({color:simWoodColor, roughness:0.85, metalness:0.02});
+  const capMat = new THREE.MeshStandardMaterial({color:simWoodColor, roughness:0.85, metalness:0.02});
+  simWoodMesh = new THREE.Mesh(geometry, [sideMat, capMat, capMat]);
+  simWoodMesh.position.y = WOOD_THICKNESS_MM / 2;
+  simScene.add(simWoodMesh);
+  applyWoodTextures();
+}
+
+/* 直徑改變時:重建圓柱幾何(材質不用重建,繼續用同一份 wood.png 貼圖) */
+function applyWoodDiameter(){
+  if (!simWoodMesh) return;
+  const radius = simWoodDiameterCM * 10 / 2;
+  const oldGeo = simWoodMesh.geometry;
+  simWoodMesh.geometry = new THREE.CylinderGeometry(radius, radius, WOOD_THICKNESS_MM, 64);
+  oldGeo.dispose();
+  if (simMode === "wood" && simControls) simControls.target.set(0, simWoodMesh.position.y, 0);
+  updateSimDecal();
+}
+
+/* 切換模擬對象(公仔 / 木片底座):顯示對應的模型與控制項,並重新貼合刻印圖案 */
+function setSimMode(mode){
+  simMode = mode;
+  document.querySelectorAll("#simModeChips .btn-sm").forEach(b => b.classList.toggle("active", b.dataset.mode === mode));
+  document.querySelectorAll(".mode-cat").forEach(el => el.style.display = mode === "cat" ? "" : "none");
+  document.querySelectorAll(".mode-wood").forEach(el => el.style.display = mode === "wood" ? "" : "none");
+  if (simCatMesh) simCatMesh.visible = (mode === "cat");
+  if (simWoodMesh) simWoodMesh.visible = (mode === "wood");
+  simMesh = (mode === "cat") ? simCatMesh : simWoodMesh;
+  document.getElementById("simColor").value = (mode === "cat") ? simCatColor : simWoodColor;
+  if (simControls){
+    if (mode === "cat" && simCatMesh){
+      const bb = new THREE.Box3().setFromObject(simCatMesh);
+      simControls.target.set(0, bb.max.y * 0.5, 0);
+    } else if (simWoodMesh){
+      simControls.target.set(0, simWoodMesh.position.y, 0);
+    }
+  }
+  updateSimDecal();
 }
 
 /* 公仔朝向+真實比例縮放:高度以 mm 為單位,依所選公分數等比縮放整個模型,並讓底部貼齊地面 */
 function applySimOrientationAndScale(){
-  if (!simMesh) return;
-  simMesh.quaternion.identity();
+  if (!simCatMesh) return;
+  simCatMesh.quaternion.identity();
   if (document.getElementById("simZUp").checked){
     // 把座標軸循環置換過來,修正這顆模型的朝向(預設打勾就是正確站姿),
     // 再繞站立後的垂直軸(世界 Y 軸)逆時針轉 90 度,調整公仔面朝的方向
     const correction = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1,1,1).normalize(), -2*Math.PI/3);
     const spin = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0), Math.PI/2);
     correction.premultiply(spin);
-    simMesh.quaternion.copy(correction);
+    simCatMesh.quaternion.copy(correction);
   }
-  simMesh.scale.set(1,1,1);
-  simMesh.position.set(0,0,0);
-  simMesh.updateMatrixWorld(true);
+  simCatMesh.scale.set(1,1,1);
+  simCatMesh.position.set(0,0,0);
+  simCatMesh.updateMatrixWorld(true);
 
-  const bb = new THREE.Box3().setFromObject(simMesh);
+  const bb = new THREE.Box3().setFromObject(simCatMesh);
   const heightMM = simFigurineCM * 10;
   const scale = heightMM / ((bb.max.y - bb.min.y) || 1);
-  simMesh.scale.setScalar(scale);
-  simMesh.updateMatrixWorld(true);
+  simCatMesh.scale.setScalar(scale);
+  simCatMesh.updateMatrixWorld(true);
 
-  const bb2 = new THREE.Box3().setFromObject(simMesh);
-  simMesh.position.y = -bb2.min.y;
-  simMesh.updateMatrixWorld(true);
+  const bb2 = new THREE.Box3().setFromObject(simCatMesh);
+  simCatMesh.position.y = -bb2.min.y;
+  simCatMesh.updateMatrixWorld(true);
 
-  const bb3 = new THREE.Box3().setFromObject(simMesh);
-  if (simControls) simControls.target.set(0, bb3.max.y * 0.5, 0);
-
-  updateSimDecal();
+  if (simMode === "cat"){
+    if (simControls){
+      const bb3 = new THREE.Box3().setFromObject(simCatMesh);
+      simControls.target.set(0, bb3.max.y * 0.5, 0);
+    }
+    updateSimDecal();
+  }
 }
 
 /* 圖案來源:上傳的 SVG > 手動輸入文字(重用純文字款排版) > 步驟④生成結果下拉選單 */
@@ -1184,9 +1338,9 @@ function renderSimSourceOptions(){
 
 /* 尺寸一律以「基準軸 + 基準值」推算,不直接讀畫面上的數字當來源,
    這樣不管圖案第一次載入、或換了比例不同的圖案,兩個欄位永遠是照目前的長寬比重新算出來,
-   不會出現「剛載入時還沒同步、看起來被拉長」的狀況。預設以長度(寬度)20mm 為基準。 */
+   不會出現「剛載入時還沒同步、看起來被拉長」的狀況。預設以長度(寬度)25mm 為基準。 */
 let simSizeAxis = "w";   // "w" = 以長度/寬度為基準,"h" = 以高度為基準
-let simSizeMM = 20;
+let simSizeMM = 25;
 function syncSimSizeFields(){
   let widthMM, heightMM;
   if (simSizeAxis === "w"){ widthMM = simSizeMM; heightMM = simSizeMM / simAspect; }
@@ -1221,24 +1375,31 @@ function rasterizeSvgToTexture(svgStr, widthMM, heightMM){
   });
 }
 
+function clearSimDecal(){
+  if (simDecalMesh){ simScene.remove(simDecalMesh); simDecalMesh.geometry.dispose(); simDecalMesh.material.dispose(); simDecalMesh = null; }
+}
+
 let simDecalToken = 0;
 async function updateSimDecal(){
   if (!simMesh) return;
   const token = ++simDecalToken;
   const svgStr = currentSimSvgInfo();
-  if (!svgStr){
-    if (simDecalMesh){ simScene.remove(simDecalMesh); simDecalMesh.geometry.dispose(); simDecalMesh.material.dispose(); simDecalMesh = null; }
-    return;
-  }
+  if (!svgStr){ clearSimDecal(); return; }
   simAspect = svgAspectFromString(svgStr) || 1;
   const {widthMM, heightMM} = syncSimSizeFields();
 
   const tex = await rasterizeSvgToTexture(svgStr, widthMM, heightMM);
   if (token !== simDecalToken || !tex) return; // 避免非同步結果與後續更新互相覆蓋
 
+  if (simMode === "cat") placeDecalOnCat(tex, widthMM, heightMM, token);
+  else placeDecalOnWood(tex, widthMM, heightMM);
+}
+
+/* 公仔:用 Raycaster 找出「環繞角度+上下位置」對應的曲面落點,再用 DecalGeometry 讓貼圖真正貼合曲面 */
+function placeDecalOnCat(tex, widthMM, heightMM, token){
   const angleDeg = Number(document.getElementById("simAngle").value);
   const vertPct = Number(document.getElementById("simVert").value) / 100;
-  const bb = new THREE.Box3().setFromObject(simMesh);
+  const bb = new THREE.Box3().setFromObject(simCatMesh);
   const cy = bb.min.y + (bb.max.y - bb.min.y) * vertPct;
   const radius = Math.max(bb.max.x - bb.min.x, bb.max.z - bb.min.z) * 1.5 + 80;
   const rad = angleDeg * Math.PI / 180;
@@ -1247,11 +1408,11 @@ async function updateSimDecal(){
   const dir = target.clone().sub(origin).normalize();
 
   const raycaster = new THREE.Raycaster(origin, dir);
-  const hits = raycaster.intersectObject(simMesh);
+  const hits = raycaster.intersectObject(simCatMesh);
   if (token !== simDecalToken || !hits.length) return;
   const hit = hits[0];
 
-  const normalMatrix = new THREE.Matrix3().getNormalMatrix(simMesh.matrixWorld);
+  const normalMatrix = new THREE.Matrix3().getNormalMatrix(simCatMesh.matrixWorld);
   const worldNormal = hit.face.normal.clone().applyMatrix3(normalMatrix).normalize();
   const dummy = new THREE.Object3D();
   dummy.position.copy(hit.point);
@@ -1259,14 +1420,28 @@ async function updateSimDecal(){
 
   const depthMM = Math.max(6, Math.min(widthMM, heightMM) * 0.4);
   const size = new THREE.Vector3(widthMM, heightMM, depthMM);
-  const decalGeo = new THREE.DecalGeometry(simMesh, hit.point, dummy.rotation.clone(), size);
+  const decalGeo = new THREE.DecalGeometry(simCatMesh, hit.point, dummy.rotation.clone(), size);
   const decalMat = new THREE.MeshStandardMaterial({
     map:tex, transparent:true, depthTest:true, depthWrite:false,
     polygonOffset:true, polygonOffsetFactor:-4, roughness:0.6, metalness:0
   });
-
-  if (simDecalMesh){ simScene.remove(simDecalMesh); simDecalMesh.geometry.dispose(); simDecalMesh.material.dispose(); }
+  clearSimDecal();
   simDecalMesh = new THREE.Mesh(decalGeo, decalMat);
+  simScene.add(simDecalMesh);
+}
+
+/* 木片底座:上表面是平的,直接放一片貼齊表面的平面貼圖就好,不需要用曲面貼合 */
+function placeDecalOnWood(tex, widthMM, heightMM){
+  clearSimDecal();
+  const geo = new THREE.PlaneGeometry(widthMM, heightMM);
+  const mat = new THREE.MeshStandardMaterial({
+    map:tex, transparent:true, depthTest:true, depthWrite:false,
+    polygonOffset:true, polygonOffsetFactor:-4, roughness:0.6, metalness:0
+  });
+  simDecalMesh = new THREE.Mesh(geo, mat);
+  simDecalMesh.rotation.x = -Math.PI / 2;
+  const topY = simWoodMesh.position.y + simWoodMesh.geometry.parameters.height / 2;
+  simDecalMesh.position.set(simWoodOffsetX, topY + 0.05, simWoodOffsetZ);
   simScene.add(simDecalMesh);
 }
 
@@ -1278,6 +1453,9 @@ function simRenderLoop(){
 function startSimLoop(){ if (!simRAF) simRenderLoop(); }
 function stopSimLoop(){ if (simRAF){ cancelAnimationFrame(simRAF); simRAF = null; } }
 
+document.getElementById("simModeChips").querySelectorAll(".btn-sm").forEach(btn => {
+  btn.addEventListener("click", () => setSimMode(btn.dataset.mode));
+});
 document.getElementById("simSizeChips").querySelectorAll(".btn-sm").forEach(btn => {
   btn.addEventListener("click", () => {
     document.getElementById("simSizeChips").querySelectorAll(".btn-sm").forEach(b => b.classList.remove("active"));
@@ -1287,7 +1465,11 @@ document.getElementById("simSizeChips").querySelectorAll(".btn-sm").forEach(btn 
   });
 });
 document.getElementById("simColor").addEventListener("input", e => {
-  if (simMesh) simMesh.material.color.set(e.target.value);
+  if (simMode === "cat") simCatColor = e.target.value; else simWoodColor = e.target.value;
+  if (simMesh){
+    const mats = Array.isArray(simMesh.material) ? simMesh.material : [simMesh.material];
+    mats.forEach(m => m.color.set(e.target.value));
+  }
 });
 document.getElementById("simZUp").addEventListener("change", applySimOrientationAndScale);
 document.getElementById("simSourceSelect").addEventListener("change", () => {
@@ -1318,12 +1500,12 @@ document.getElementById("simClearUpload").addEventListener("click", () => {
 });
 function onSimWidthInput(v){
   simSizeAxis = "w";
-  simSizeMM = parseFloat(v) || 20;
+  simSizeMM = parseFloat(v) || 25;
   updateSimDecal();
 }
 function onSimHeightInput(v){
   simSizeAxis = "h";
-  simSizeMM = parseFloat(v) || 20;
+  simSizeMM = parseFloat(v) || 25;
   updateSimDecal();
 }
 document.getElementById("simWidthMM").addEventListener("input", e => onSimWidthInput(e.target.value));
@@ -1337,6 +1519,32 @@ document.getElementById("simAngle").addEventListener("input", () => {
 document.getElementById("simVert").addEventListener("input", () => {
   document.getElementById("simVertVal").textContent = document.getElementById("simVert").value + "%";
   updateSimDecal();
+});
+document.getElementById("simWoodX").addEventListener("input", () => {
+  simWoodOffsetX = Number(document.getElementById("simWoodX").value);
+  document.getElementById("simWoodXVal").textContent = simWoodOffsetX;
+  updateSimDecal();
+});
+document.getElementById("simWoodZ").addEventListener("input", () => {
+  simWoodOffsetZ = Number(document.getElementById("simWoodZ").value);
+  document.getElementById("simWoodZVal").textContent = simWoodOffsetZ;
+  updateSimDecal();
+});
+document.getElementById("simWoodSizeChips").querySelectorAll(".btn-sm").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.getElementById("simWoodSizeChips").querySelectorAll(".btn-sm").forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+    simWoodDiameterCM = parseFloat(btn.dataset.cm);
+    document.getElementById("simWoodDiameter").value = simWoodDiameterCM;
+    applyWoodDiameter();
+  });
+});
+document.getElementById("simWoodDiameter").addEventListener("input", () => {
+  simWoodDiameterCM = parseFloat(document.getElementById("simWoodDiameter").value) || 7;
+  document.getElementById("simWoodSizeChips").querySelectorAll(".btn-sm").forEach(b => {
+    b.classList.toggle("active", parseFloat(b.dataset.cm) === simWoodDiameterCM);
+  });
+  applyWoodDiameter();
 });
 
 /* ── 初始化 ── */
