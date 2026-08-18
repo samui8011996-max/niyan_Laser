@@ -20,6 +20,7 @@
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/geometries/DecalGeometry.js"></script>
 <script src="default-library.js"></script>
+<script src="default-templates.js"></script>
 <script src="default-fonts.js"></script>
 <script src="default-model.js"></script>
 <script src="default-wood.js"></script>
@@ -27,6 +28,7 @@
   @font-face{ font-family:'MOBO'; src:url('MOBO-Bold.otf') format('opentype'); font-weight:700; font-style:normal; }
   @font-face{ font-family:'jf-openhuninn'; src:url('jf-openhuninn-2.0.ttf') format('truetype'); font-weight:400; font-style:normal; }
   @font-face{ font-family:'ChenYuluoyan'; src:url('ChenYuluoyan-2.0-Thin.ttf') format('truetype'); font-weight:300; font-style:normal; }
+  @font-face{ font-family:'AaWanWan'; src:url('AaWanWan.ttf') format('truetype'); font-weight:400; font-style:normal; }
   :root{
     --bg:#1C1A16; --panel:#26231E; --panel2:#2E2A24; --border:#3B362E;
     --gold:#E8B44A; --gold-dim:#8f7434; --text:#F2EDE2; --muted:#9C9384; --danger:#D97762;
@@ -85,8 +87,15 @@
   .r-card .info{padding:10px 12px 12px}
   .r-card .t{font-size:13px;font-weight:700;cursor:pointer}
   .r-card .m{font-size:11.5px;color:var(--muted);margin-top:3px;line-height:1.6}
+  .r-card .warn{font-size:11.5px;color:var(--danger);margin-top:6px;line-height:1.6}
   .r-card .fontedit{margin-top:10px;padding-top:10px;border-top:1px solid var(--border)}
   .r-card .fontedit label{margin-bottom:3px}
+  .r-card .fontedit .boldrow{display:flex;align-items:center;gap:6px;margin-top:8px;margin-bottom:0;
+    font-size:12px;color:var(--muted);cursor:pointer}
+  .r-card .fontedit .boldrow input{width:auto;margin:0}
+  .r-card .fontedit .posrow{display:flex;gap:8px;margin-top:8px}
+  .r-card .fontedit .posrow>div{flex:1;min-width:0}
+  .r-card .fontedit .reset-btn{margin-top:8px;width:100%;color:var(--danger)}
   .r-card .dl{display:flex;gap:6px;margin-top:10px}
   .r-card .dl button{flex:1}
   .head-row{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px}
@@ -161,10 +170,11 @@
     <summary>① 素材庫(星座 SVG 小圖)</summary>
     <div class="acc-body">
     <p class="hint">星座與常用圖案(元寶、幸運草、櫻花、貓掌等)已<b>內建在網站裡</b>,不用另外上傳就能直接使用。若要新增或替換圖案,上傳 SVG 檔即可,檔名就是對應的名稱(例如 <b>巨蟹座.svg</b>、<b>元寶.svg</b>);上傳過的內容會保存在這台電腦的瀏覽器裡。找不到圖案的星座會先用備用符號代替。</p>
+    <p class="hint">辦公室款(胖胖招財招福貓)的整張樣板<b>辦公室一對_◯◯.svg</b>、<b>辦公室_◯◯.svg</b> 也已內建。要新增圖案時,上傳檔名同樣格式的 SVG(例如 <b>辦公室一對_大吉大利.svg</b>),訂單備注寫「刻印圖案: 大吉大利」就會自動套用,不用改程式。</p>
     <input type="file" id="svgInput" accept=".svg" multiple hidden>
     <button class="btn" onclick="svgInput.click()">＋ 上傳 SVG 圖案</button>
     <div id="libraryGrid"></div>
-    <p class="hint" style="margin-top:16px">星座刻印文字用 <b>MOBO</b>、純文字款式(無星座欄位,如招財貓)用 <b>jf-openhuninn-2.0</b>。這兩款字體已內建打包進網站,匯出的圖片與「雷雕相容 SVG」都會自動正確顯示,不需要另外上傳。若想換成別的字體檔,可在此重新上傳同名字體覆蓋。</p>
+    <p class="hint" style="margin-top:16px">星座刻印文字用 <b>MOBO</b>、純文字款式(無星座欄位,如招財貓)用 <b>jf-openhuninn-2.0</b>、辦公室款(胖胖招財招福貓)用 <b>AaWanWan</b>。這些字體已內建打包進網站,匯出的圖片與「雷雕相容 SVG」都會自動正確顯示,不需要另外上傳。若想換成別的字體檔,可在此重新上傳同名字體覆蓋。<b>AaWanWan 是簡體字型,少數繁體字(貓、黃、吳…)沒有字</b>,遇到時卡片會標紅提醒,改用其他字體即可。</p>
     <input type="file" id="fontInput" accept=".otf,.ttf,.woff,.woff2" multiple hidden>
     <button class="btn-sm" onclick="fontInput.click()">＋ 上傳/替換字體檔</button>
     <p id="fontStatus"></p>
@@ -232,7 +242,7 @@
   <details class="acc">
     <summary>③ 版面設定</summary>
     <div class="acc-body">
-    <p class="hint">以下「畫布寬/畫布高」只套用在<b>有圖案(星座等)</b>的款式。<b>純文字款(無圖案,如招財貓)</b>會自動依文字長度縮到剛好貼齊文字邊緣的尺寸,不受畫布寬高影響,避免雷雕時留下多餘空白。</p>
+    <p class="hint">以下「畫布寬/畫布高」只套用在<b>有圖案(星座等)</b>的款式。<b>純文字款(無圖案,如招財貓)</b>會自動依文字長度縮到剛好貼齊文字邊緣的尺寸,不受畫布寬高影響,避免雷雕時留下多餘空白。<b>辦公室款(胖胖招財招福貓)</b>用整張樣板的原始尺寸,文字會自動排進圖裡並依長度縮放,只有「辦公室款文字 %」這一項會影響它(100 = 自動大小,想整體大一點/小一點再調)。</p>
     <div class="grid-set" id="settingsGrid"></div>
     </div>
   </details>
@@ -243,7 +253,7 @@
       <h2 id="resultTitle">④ 生成結果</h2>
       <button class="btn" id="dlAllBtn" style="display:none" onclick="downloadAll()">⬇ 下載全部(雷雕用 SVG)</button>
     </div>
-    <p class="hint" style="margin-top:10px">每筆結果可下載三種檔案:<b>雷雕用 SVG</b>(推薦,已壓平成單一圖片,匯入 xTool 等雷雕軟體不會跑位變形)、<b>原始向量SVG</b>(保留可編輯的文字與路徑,適合在 Illustrator 等設計軟體開啟,但部分雷雕軟體的 SVG 解析器不支援內嵌字體與巢狀圖案,匯入後可能會跑位/變形)、以及 <b>PNG</b>。「下載全部」會批次下載雷雕用版本。</p>
+    <p class="hint" style="margin-top:10px">每筆結果可下載三種檔案:<b>雷雕用 SVG</b>(推薦,已壓平成單一圖片,匯入 xTool 等雷雕軟體不會跑位變形)、<b>原始向量SVG</b>(保留可編輯的文字與路徑,適合在 Illustrator 等設計軟體開啟,但部分雷雕軟體的 SVG 解析器不支援內嵌字體與巢狀圖案,匯入後可能會跑位/變形)、以及 <b>PNG</b>。「下載全部」會批次下載雷雕用版本。點一下卡片可以展開編輯這一筆的字體、文字大小、位置(X/Y 是文字的位移量,圖案本身不會動),不填就照自動排版。</p>
     <p class="hint" id="emptyHint" style="margin-top:16px">讀取訂單後,每一筆的預覽會顯示在這裡。</p>
     <div id="resultGrid"></div>
   </section>
@@ -383,6 +393,7 @@ const FONT_OPTIONS = [
   {label:"襯線字體", value:"Georgia,'Times New Roman',serif", weight:700},
   {label:"jf-openhuninn-2.0(純文字款預設)", value:"'jf-openhuninn',sans-serif", weight:400, key:"JF"},
   {label:"ChenYuluoyan-2.0-Thin(手寫細字)", value:"'ChenYuluoyan',sans-serif", weight:300, key:"CHENYU"},
+  {label:"AaWanWan(辦公室對貓款預設)", value:"'AaWanWan',sans-serif", weight:400, key:"WANWAN"},
 ];
 /* 無星座欄位的純文字款式(例如招財貓)固定使用此字體 */
 const PURE_TEXT_FONT = FONT_OPTIONS.find(f => f.key === "JF");
@@ -392,7 +403,33 @@ const FONT_FACE_SRC = {
   MOBO: {family:"MOBO", weight:700, format:"opentype"},
   JF: {family:"jf-openhuninn", weight:400, format:"truetype"},
   CHENYU: {family:"ChenYuluoyan", weight:300, format:"truetype"},
+  WANWAN: {family:"AaWanWan", weight:400, format:"truetype"},
 };
+
+/* ── 辦公室款(胖胖招財招福貓)樣板 ─────────────────────────────────────────
+   這類商品不是「圖案＋分隔線＋文字」的組合,而是直接用資料夾裡的整張樣板
+   (辦公室一對_財富自由.svg 等),把客人的刻印文字用 AaWanWan 排進貓的肚子裡:
+     ・刻印圖案「無圖案」→ 文字放正中央
+     ・其他圖案         → 文字放在圖案字樣上方的空白處(偏上)
+   樣板已打包在 default-templates.js。之後若多了新圖案,只要在步驟①上傳一張
+   檔名為「辦公室一對_新圖案.svg」的檔案,訂單備注寫「刻印圖案: 新圖案」就會自動套用。 */
+const TEMPLATE_ITEMS = [
+  {
+    key:"辦公室一對",
+    label:"辦公室療癒首選 胖胖招財招福貓(中)一對",
+    prefix:"辦公室一對_",
+    fontKey:"WANWAN",
+    maxFontSize:62,          // 無圖案(文字致中)時的字級上限
+    maxFontSizeWithArt:52,   // 有圖案(文字偏上)時的字級上限
+    /* 傳進來的是整列訂單資料(含商品名稱欄)的文字。一定要認「辦公室療癒首選」這個字樣,
+       不能只認「招財招福貓」+「一對」——原本星座款的「胖胖招財招福貓一對(小)」商品名稱
+       也含有這兩個詞,只用那兩個詞比對會把星座款誤判成辦公室款。 */
+    match: t => t.includes("辦公室療癒首選") && t.includes("一對"),
+  },
+];
+const DEFAULT_PATTERN = "無圖案";
+/* 文字可用範圍取「外框內接橢圓」的比例:0.9 大約等於樣板外框的內緣再留一點邊 */
+const TPL_SAFE = 0.9;
 
 /* 刻印一律用黑色,不開放調整 */
 const INK = "#231815";
@@ -402,6 +439,7 @@ const DEFAULT_SETTINGS = {
   iconSize:130, gap1:18, lineLen:220, lineWidth:6, gap2:14,
   fontSize:44, fontIdx:0, letterSpacing:2,
   bgTransparent:true,
+  tplTextScale:100,   // 辦公室款樣板:文字自動排版後再乘上的比例(%)
 };
 
 /* ── 狀態 ── */
@@ -442,13 +480,26 @@ const saveFontData = () => { try { localStorage.setItem(FONT_KEY, JSON.stringify
 
 /* ── 訂單解析 ── */
 function parseNote(note){
-  if (typeof note !== "string" || (!note.includes("刻印文字") && !note.includes("星座") && !note.includes("款式"))) return null;
+  if (typeof note !== "string"
+      || (!note.includes("刻印文字") && !note.includes("星座") && !note.includes("款式") && !note.includes("刻印圖案"))) return null;
   const zodiac = (note.match(/星座[:：]\s*(.+?)\s*(?=刻印文字|[,，]|$)/)||[])[1]?.trim() || "";
-  const color  = (note.match(/顏色[:：]\s*(.+?)\s*(?=[,，]|星座|$)/)||[])[1]?.trim() || "";
+  /* 辦公室款用「刻印圖案」指定要套哪一張樣板(無圖案 / 財富自由 / 提早退休…) */
+  const pattern = (note.match(/刻印圖案[:：]\s*([^,，\/]+?)\s*(?=[,，\/]|\s\S+[:：]|$)/)||[])[1]?.trim() || "";
+  let color = (note.match(/顏色[:：]\s*(.+?)\s*(?=[,，]|星座|$)/)||[])[1]?.trim() || "";
+  if (!color){
+    /* 對貓款是兩隻一組,顏色分開寫成「金運: ◯◯, 招福: ◯◯」 */
+    const pairs = [];
+    ["金運","招福"].forEach(k => {
+      /* 值取到「逗號 / 斜線 / 下一個欄位名稱」為止,才不會把後面的「刻印圖案: ◯◯」一起吃進來 */
+      const m = note.match(new RegExp(k+"[:：]\\s*([^,，\\/]+?)\\s*(?=[,，\\/]|\\s\\S+[:：]|$)"));
+      if (m) pairs.push(k+" "+m[1].trim());
+    });
+    color = pairs.join(" · ");
+  }
   let raw = (note.match(/刻印文字[:：]\s*(.+)$/)||[])[1] || "";
   const qty = parseInt((raw.match(/\s*[xX×](\d+)\s*$/)||[])[1] || "1", 10);
   const text = raw.replace(/\s*[xX×]\d+\s*$/,"").trim();
-  return {zodiac, color, text, qty};
+  return {zodiac, pattern, color, text, qty};
 }
 
 function parseDateParts(str){
@@ -496,11 +547,15 @@ function rowsToOrders(rows){
     const cells = row.map(c => String(c ?? ""));
     const noteCell = colMap.note != null ? cells[colMap.note] : cells.find(c => c.includes("刻印文字"));
     const parsed = parseNote(noteCell || "");
-    if (!parsed || (!parsed.text && !parsed.zodiac)) return;
+    if (!parsed || (!parsed.text && !parsed.zodiac && !parsed.pattern)) return;
     const name = colMap.name != null ? (cells[colMap.name]||"") : (cells[1] || "");
     const orderId = colMap.orderId != null ? (cells[colMap.orderId]||"") : (cells.find(c => /^\d{14,}$/.test(c.trim())) || "");
     const date = colMap.date != null ? (cells[colMap.date]||"") : "";
-    out.push({id:i+"-"+(orderId||parsed.text), name:name.trim(), orderId:orderId.trim(), date, ...parsed});
+    /* 商品名稱可能在任何一欄(不同平台匯出的欄位不一樣),所以拿整列的文字來比對是不是樣板商品 */
+    const rowText = cells.join(" ");
+    const item = TEMPLATE_ITEMS.find(t => t.match(rowText));
+    out.push({id:i+"-"+(orderId||parsed.text), name:name.trim(), orderId:orderId.trim(), date,
+              template: item ? item.key : "", ...parsed});
   });
   return out;
 }
@@ -543,6 +598,145 @@ function findIcon(zodiac){
   return key ? library[key] : null;
 }
 
+/* ── 辦公室款樣板:取用、量測、排字 ── */
+function templateItem(key){ return TEMPLATE_ITEMS.find(t => t.key === key) || null; }
+
+/* 使用者在步驟①上傳的同名 SVG 優先,其次才用內建樣板,方便日後直接換圖不用改程式 */
+function templateSvgByName(name){
+  if (!name) return null;
+  if (library[name]) return library[name];
+  return (typeof DEFAULT_TEMPLATES !== "undefined" && DEFAULT_TEMPLATES[name]) || null;
+}
+function templateNames(prefix){
+  const names = new Set();
+  if (typeof DEFAULT_TEMPLATES !== "undefined") Object.keys(DEFAULT_TEMPLATES).forEach(n => names.add(n));
+  Object.keys(library).forEach(n => { if (n.startsWith("辦公室")) names.add(n); });
+  return [...names].filter(n => !prefix || n.startsWith(prefix)).sort();
+}
+/* 這一筆要套哪一張樣板:手動輸入是直接指定樣板檔名,訂單則由商品名稱(template)＋刻印圖案組出來 */
+function templateNameFor(order){
+  if (order.templateName) return order.templateName;
+  const item = templateItem(order.template);
+  return item ? item.prefix + (order.pattern || DEFAULT_PATTERN) : null;
+}
+
+function unionBox(a, b){
+  if (!a) return b ? {x:b.x, y:b.y, w:b.w, h:b.h} : null;
+  if (!b) return a;
+  const x = Math.min(a.x, b.x), y = Math.min(a.y, b.y);
+  return {x, y, w: Math.max(a.x+a.w, b.x+b.w) - x, h: Math.max(a.y+a.h, b.y+b.h) - y};
+}
+
+/* 量出樣板裡各個元素實際占的範圍:面積最大的那個是貓的外框,其餘的就是「圖案字樣」
+   (無圖案的樣板只有外框)。用實際量到的位置排字,之後換圖或新增圖案都不用回來改數字。 */
+const _tplGeomCache = {};
+function templateGeometry(name, svgStr){
+  const cacheKey = name + "|" + svgStr.length;
+  if (_tplGeomCache[cacheKey]) return _tplGeomCache[cacheKey];
+  const info = extractSvgInfo(svgStr);
+  if (!info) return null;
+  let host = document.getElementById("tplMeasure");
+  if (!host){
+    host = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    host.id = "tplMeasure";
+    /* 用 visibility 藏起來而不是 display:none,元素仍有版面才量得到 getBBox */
+    host.setAttribute("style", "position:absolute;left:-99999px;top:0;width:200px;height:200px;visibility:hidden");
+    document.body.appendChild(host);
+  }
+  host.setAttribute("viewBox", info.viewBox);
+  host.innerHTML = info.inner;
+  let frame = null, art = null;
+  [...host.children].forEach(el => {
+    const tag = (el.tagName || "").toLowerCase();
+    if (tag === "defs" || tag === "style" || tag === "title" || tag === "desc") return;
+    let b = null;
+    try { b = el.getBBox(); } catch(e){ return; }
+    if (!b || b.width <= 0 || b.height <= 0) return;
+    const box = {x:b.x, y:b.y, w:b.width, h:b.height};
+    if (!frame){ frame = box; return; }
+    if (box.w*box.h > frame.w*frame.h){ art = unionBox(art, frame); frame = box; }
+    else art = unionBox(art, box);
+  });
+  host.innerHTML = "";
+  if (!frame) return null;
+  const vb = info.viewBox.trim().split(/[\s,]+/).map(Number);
+  const geom = {viewBox:info.viewBox, w: vb[2] || frame.w, h: vb[3] || frame.h, frame, art};
+  _tplGeomCache[cacheKey] = geom;
+  return geom;
+}
+
+/* 算出刻印文字的位置與字級。
+   外框是圓弧形的,越靠近上下兩端能寫的寬度越窄,所以寬度上限用「外框的內接橢圓」
+   在文字上下緣的寬度來算,文字才不會壓到貓的輪廓。 */
+/* sizeOverride:使用者在卡片上手動指定的字級(px)。給了就直接用這個大小
+   (不跑自動縮放,允許使用者自己判斷要不要超出安全範圍),只重新算置中的 y。
+   weight:實際要用的字重(可能是粗體覆寫後的值),量寬度要用這個才準,
+   不然粗體字比量測時寬,還是可能貼到圖案。 */
+function templateTextLayout(geom, item, text, font, scalePct, sizeOverride, weight){
+  const f = geom.frame;
+  const cx = f.x + f.w/2, cy = f.y + f.h/2;
+  const a = f.w/2 * TPL_SAFE, b = f.h/2 * TPL_SAFE;
+  const padX = Math.max(4, f.w * 0.03);
+
+  let centerY, bandH, maxSize;
+  if (geom.art){
+    const top = cy - b + f.h * 0.04;              // 外框內緣往下留一點邊
+    const bottom = geom.art.y - f.h * 0.05;       // 與下方圖案字樣之間留一點間距
+    centerY = (top + bottom) / 2;
+    bandH = Math.max(8, bottom - top);
+    maxSize = item.maxFontSizeWithArt;
+  } else {
+    centerY = cy;                                  // 無圖案:整個肚子的正中央
+    bandH = b * 1.2;
+    maxSize = item.maxFontSize;
+  }
+  maxSize = maxSize * (Number(scalePct) || 100) / 100;
+
+  const REF = 100;
+  const m0 = measureTextMetrics(text, font.value, weight != null ? weight : font.weight, REF, 0);
+  const ink0 = Math.max(1, m0.ascent + m0.descent);
+  let size;
+  if (sizeOverride != null && sizeOverride > 0){
+    size = sizeOverride;
+  } else {
+    size = Math.min(maxSize, bandH / ink0 * REF);
+    /* 寬度上限跟字級互相牽動(字越大、上緣越高、可用寬度越窄),縮幾次就會收斂 */
+    for (let i = 0; i < 4; i++){
+      const ink = ink0 * size / REF;
+      const dy = Math.max(Math.abs(centerY - ink/2 - cy), Math.abs(centerY + ink/2 - cy));
+      const t = Math.min(1, dy / b);
+      const half = a * Math.sqrt(Math.max(0.04, 1 - t*t));
+      const maxW = Math.max(10, half*2 - padX*2);
+      const w = m0.width * size / REF;
+      if (w <= maxW) break;
+      size = size * (maxW / w);
+    }
+    size = Math.max(6, size);
+  }
+  const m = measureTextMetrics(text, font.value, weight != null ? weight : font.weight, size, 0);
+  return {x:cx, y: centerY + (m.ascent - m.descent)/2, size};
+}
+
+/* 這套字型(AaWanWan)缺少部分繁體字,直接雷雕會刻出空白豆腐格,所以先挑出缺的字提醒 */
+function missingGlyphs(text, fontKey){
+  const ranges = (typeof FONT_COVERAGE !== "undefined" && FONT_COVERAGE[fontKey]) || null;
+  if (!ranges || !text) return "";
+  const out = [];
+  for (const ch of text){
+    const cp = ch.codePointAt(0);
+    if (cp <= 32) continue;
+    let lo = 0, hi = ranges.length - 1, found = false;
+    while (lo <= hi){
+      const mid = (lo + hi) >> 1;
+      if (cp < ranges[mid][0]) hi = mid - 1;
+      else if (cp > ranges[mid][1]) lo = mid + 1;
+      else { found = true; break; }
+    }
+    if (!found && out.indexOf(ch) < 0) out.push(ch);
+  }
+  return out.join("");
+}
+
 let _measureCanvas = null;
 function measureTextWidth(text, fontFamily, fontWeight, fontSize, letterSpacing){
   if (!_measureCanvas) _measureCanvas = document.createElement("canvas");
@@ -571,6 +765,14 @@ function measureTextMetrics(text, fontFamily, fontWeight, fontSize, letterSpacin
   return {width, ascent, descent};
 }
 
+/* 辦公室款(AaWanWan)預設就用粗體,因為原字重刻在木片/公仔上偏細,不容易看清楚。
+   其他款式維持原字重不變。order.boldOverride 有明確設就照設定,沒設才套這個預設。 */
+function defaultBold(order){ return !!templateNameFor(order); }
+function effectiveWeight(order, font){
+  const bold = order.boldOverride != null ? order.boldOverride : defaultBold(order);
+  return bold ? Math.min(900, (font.weight||400) + 300) : font.weight;
+}
+
 function fontFaceStyle(fontKey){
   const data = fontData[fontKey];
   const meta = FONT_FACE_SRC[fontKey];
@@ -589,31 +791,39 @@ function buildSvg(order, iconSvgString, s){
     ? (FONT_OPTIONS[order.fontOverride] || FONT_OPTIONS[0])
     : (order.zodiac ? (FONT_OPTIONS[s.fontIdx] || FONT_OPTIONS[0]) : PURE_TEXT_FONT);
 
+  /* 自動排版偶爾不夠準,留一個手動退路:這一筆卡片可以自己指定字級與位移(px),
+     不填就照原本的自動邏輯。位移只動文字,不影響圖案本身的位置。
+     Y 特意反過來存(輸入正數往上、負數往下),符合直覺;SVG 座標系統本身是
+     y 越大越往下,所以套用時要取負號。 */
+  const fontSize = order.fontSizeOverride != null ? order.fontSizeOverride : s.fontSize;
+  const offX = order.offsetX || 0, offY = -(order.offsetY || 0);
+  const weight = effectiveWeight(order, font);
+
   /* 純文字款(無圖案)不套用固定畫布,改成貼齊文字邊緣的緊湊尺寸(留一點點邊距),
      這樣例如三個字就只有三個字的寬度,雷雕時不會留一大片多餘空白。 */
   if (!hasIcon && hasText){
-    const m = measureTextMetrics(order.text, font.value, font.weight, s.fontSize, s.letterSpacing);
-    const padX = Math.max(6, s.fontSize * 0.12);
-    const padY = Math.max(4, s.fontSize * 0.12);
+    const m = measureTextMetrics(order.text, font.value, weight, fontSize, s.letterSpacing);
+    const padX = Math.max(6, fontSize * 0.12);
+    const padY = Math.max(4, fontSize * 0.12);
     const w = m.width + padX * 2;
     const h = m.ascent + m.descent + padY * 2;
     const textY = padY + m.ascent;
     const bg = s.bgTransparent ? "" : '<rect width="100%" height="100%" fill="#ffffff"/>';
     const style = fontFaceStyle(font.key);
-    const text = '<text x="'+(w/2)+'" y="'+textY+'" text-anchor="middle" font-size="'+s.fontSize+'" font-weight="'+font.weight+'" letter-spacing="'+s.letterSpacing+'" font-family="'+font.value.replace(/"/g,"'")+'" fill="'+INK+'">'+esc(order.text)+'</text>';
-    return {svg:'<svg xmlns="http://www.w3.org/2000/svg" width="'+w+'" height="'+h+'" viewBox="0 0 '+w+' '+h+'">'+style+bg+text+'</svg>', w, h};
+    const text = '<text x="'+(w/2+offX)+'" y="'+(textY+offY)+'" text-anchor="middle" font-size="'+fontSize+'" font-weight="'+weight+'" letter-spacing="'+s.letterSpacing+'" font-family="'+font.value.replace(/"/g,"'")+'" fill="'+INK+'">'+esc(order.text)+'</text>';
+    return {svg:'<svg xmlns="http://www.w3.org/2000/svg" width="'+w+'" height="'+h+'" viewBox="0 0 '+w+' '+h+'">'+style+bg+text+'</svg>', w, h, textSize:fontSize};
   }
 
   let totalH = 0;
   if (hasIcon) totalH += s.iconSize;
   if (showLine) totalH += s.gap1 + s.lineWidth + s.gap2;
-  if (hasText) totalH += s.fontSize;
+  if (hasText) totalH += fontSize;
   const top = (s.canvasH - totalH) / 2;
   const cx = s.canvasW / 2;
 
   let lineLen = s.lineLen;
   if (hasText){
-    const textW = measureTextWidth(order.text, font.value, font.weight, s.fontSize, s.letterSpacing);
+    const textW = measureTextWidth(order.text, font.value, weight, fontSize, s.letterSpacing);
     lineLen = Math.max(s.lineLen, textW + 40);
   }
 
@@ -635,17 +845,52 @@ function buildSvg(order, iconSvgString, s){
   }
 
   if (hasText){
-    parts += '<text x="'+cx+'" y="'+(y + s.fontSize*0.8)+'" text-anchor="middle" font-size="'+s.fontSize+'" font-weight="'+font.weight+'" letter-spacing="'+s.letterSpacing+'" font-family="'+font.value.replace(/"/g,"'")+'" fill="'+INK+'">'+esc(order.text)+'</text>';
+    parts += '<text x="'+(cx+offX)+'" y="'+(y + fontSize*0.8 + offY)+'" text-anchor="middle" font-size="'+fontSize+'" font-weight="'+weight+'" letter-spacing="'+s.letterSpacing+'" font-family="'+font.value.replace(/"/g,"'")+'" fill="'+INK+'">'+esc(order.text)+'</text>';
   }
 
   const bg = s.bgTransparent ? "" : '<rect width="100%" height="100%" fill="#ffffff"/>';
   const style = hasText ? fontFaceStyle(font.key) : "";
-  return {svg:'<svg xmlns="http://www.w3.org/2000/svg" width="'+s.canvasW+'" height="'+s.canvasH+'" viewBox="0 0 '+s.canvasW+' '+s.canvasH+'">'+style+bg+parts+'</svg>', w:s.canvasW, h:s.canvasH};
+  return {svg:'<svg xmlns="http://www.w3.org/2000/svg" width="'+s.canvasW+'" height="'+s.canvasH+'" viewBox="0 0 '+s.canvasW+' '+s.canvasH+'">'+style+bg+parts+'</svg>', w:s.canvasW, h:s.canvasH, textSize:fontSize};
+}
+
+/* 辦公室款:整張樣板原樣輸出,只把刻印文字排進圖裡(座標系統就是樣板自己的 viewBox) */
+function buildTemplateSvg(order, tplName, tplSvg, s){
+  const info = extractSvgInfo(tplSvg);
+  const geom = templateGeometry(tplName, tplSvg);
+  if (!info || !geom) return null;
+  const item = templateItem(order.template) || TEMPLATE_ITEMS.find(t => tplName.startsWith(t.prefix)) || TEMPLATE_ITEMS[0];
+  const font = order.fontOverride != null
+    ? (FONT_OPTIONS[order.fontOverride] || FONT_OPTIONS[0])
+    : (FONT_OPTIONS.find(f => f.key === item.fontKey) || PURE_TEXT_FONT);
+  const weight = effectiveWeight(order, font);
+
+  let parts = s.bgTransparent ? "" : '<rect width="100%" height="100%" fill="#ffffff"/>';
+  parts += info.inner;
+  let style = "";
+  let textSize = null;
+  if (order.text){
+    const lay = templateTextLayout(geom, item, order.text, font, s.tplTextScale, order.fontSizeOverride, weight);
+    const x = lay.x + (order.offsetX || 0);
+    const y = lay.y - (order.offsetY || 0);   // 輸入正數往上,SVG y 座標要取負號
+    textSize = lay.size;
+    style = fontFaceStyle(font.key);
+    parts += '<text x="'+x+'" y="'+y+'" text-anchor="middle" font-size="'+lay.size+'"'
+          + ' font-weight="'+weight+'" font-family="'+font.value.replace(/"/g,"'")+'" fill="'+INK+'">'
+          + esc(order.text) + '</text>';
+  }
+  return {svg:'<svg xmlns="http://www.w3.org/2000/svg" width="'+geom.w+'" height="'+geom.h+'" viewBox="'+info.viewBox+'">'
+              + style + parts + '</svg>', w:geom.w, h:geom.h, textSize};
 }
 
 /* ── 下載 ── */
 function sanitizeFilename(t){ return t.replace(/[\\/:*?"<>|]/g,"_").slice(0,60); }
-function fileNameFor(o){ return sanitizeFilename((o.orderId||"訂單")+"_"+(o.name||"")+"_"+(o.text||o.zodiac||"圖案")); }
+function fileNameFor(o){
+  const base = (o.orderId||"訂單")+"_"+(o.name||"");
+  const tplName = templateNameFor(o);
+  /* 辦公室款把樣板名一起寫進檔名,現場才分得出是哪一張圖 */
+  if (tplName) return sanitizeFilename(base+"_"+tplName+"_"+(o.text||"無文字"));
+  return sanitizeFilename(base+"_"+(o.text||o.zodiac||"圖案"));
+}
 
 function downloadBlob(blob, filename){
   const url = URL.createObjectURL(blob);
@@ -819,7 +1064,8 @@ document.getElementById("fontInput").addEventListener("change", async function()
     if (n.includes("mobo")) key = "MOBO";
     else if (n.includes("openhuninn") || n.includes("jf-")) key = "JF";
     else if (n.includes("chenyu")) key = "CHENYU";
-    if (!key){ alert("無法辨識字體檔:"+f.name+"(檔名需包含 MOBO、openhuninn 或 ChenYuluoyan)"); continue; }
+    else if (n.includes("wanwan") || n.includes("彎彎") || n.includes("弯弯")) key = "WANWAN";
+    if (!key){ alert("無法辨識字體檔:"+f.name+"(檔名需包含 MOBO、openhuninn、ChenYuluoyan 或 WanWan)"); continue; }
     const dataUrl = await readFileAsDataUrl(f);
     userFontData[key] = dataUrl;
     fontData[key] = dataUrl;
@@ -911,15 +1157,32 @@ function renderManualIconSelect(){
     const op = document.createElement("option"); op.value = k; op.textContent = k;
     sel.appendChild(op);
   });
+  /* 辦公室款是整張樣板(文字排進圖裡),跟星座小圖不同,所以另外分一組 */
+  const tpls = templateNames("");
+  if (tpls.length){
+    const grp = document.createElement("optgroup");
+    grp.label = "辦公室款樣板(文字排進圖裡)";
+    tpls.forEach(n => {
+      const op = document.createElement("option"); op.value = "tpl:"+n; op.textContent = n;
+      grp.appendChild(op);
+    });
+    sel.appendChild(grp);
+  }
   if ([...sel.options].some(o => o.value === current)) sel.value = current;
 }
 function addManualOrder(){
-  const zodiac = document.getElementById("manualZodiac").value;
+  const picked = document.getElementById("manualZodiac").value;
   const text = document.getElementById("manualText").value.trim();
   const qty = Math.max(1, parseInt(document.getElementById("manualQty").value, 10) || 1);
-  if (!zodiac && !text){ alert("請至少選擇圖案或輸入文字"); return; }
+  /* 「tpl:」開頭的是辦公室款樣板,不是星座小圖 */
+  const isTpl = picked.startsWith("tpl:");
+  const templateName = isTpl ? picked.slice(4) : "";
+  const zodiac = isTpl ? "" : picked;
+  const item = isTpl ? TEMPLATE_ITEMS.find(t => templateName.startsWith(t.prefix)) : null;
+  if (!zodiac && !templateName && !text){ alert("請至少選擇圖案或輸入文字"); return; }
   manualCounter++;
-  manualOrders.push({id:"manual-"+manualCounter, name:"", orderId:"", date:"", zodiac, color:"", text, qty});
+  manualOrders.push({id:"manual-"+manualCounter, name:"", orderId:"", date:"", zodiac, color:"", text, qty,
+                     templateName, template: item ? item.key : ""});
   document.getElementById("manualText").value = "";
   renderManualList(); updateStatus(); render();
 }
@@ -942,7 +1205,8 @@ function renderManualList(){
     row.className = "row"; row.style.marginTop = "6px";
     const label = document.createElement("span");
     label.style.flex = "1";
-    label.textContent = (o.zodiac ? "["+o.zodiac+"] " : "") + (o.text || "(無文字)") + (o.qty > 1 ? " x"+o.qty : "");
+    const tag = o.templateName || o.zodiac;
+    label.textContent = (tag ? "["+tag+"] " : "") + (o.text || "(無文字)") + (o.qty > 1 ? " x"+o.qty : "");
     const del = document.createElement("button");
     del.className = "btn-sm"; del.textContent = "移除";
     del.onclick = () => removeManualOrder(o.id);
@@ -958,6 +1222,7 @@ const SETTING_FIELDS = [
   {k:"lineLen", label:"分隔線長", type:"num"}, {k:"lineWidth", label:"分隔線粗", type:"num"},
   {k:"gap2", label:"線-字間距", type:"num"}, {k:"fontSize", label:"文字大小", type:"num"},
   {k:"letterSpacing", label:"字距", type:"num"},
+  {k:"tplTextScale", label:"辦公室款文字 %", type:"num"},
   {k:"fontIdx", label:"字體", type:"font"},
   {k:"bgTransparent", label:"背景", type:"bg"},
 ];
@@ -990,13 +1255,29 @@ function renderSettings(){
 /* ── 結果 UI ── */
 function currentResults(){
   return visibleOrders().map(o => {
+    /* 辦公室款先處理:整張樣板 ＋ 排進圖裡的刻印文字 */
+    const tplName = templateNameFor(o);
+    if (tplName){
+      const tplSvg = templateSvgByName(tplName);
+      const built = tplSvg ? buildTemplateSvg(o, tplName, tplSvg, settings) : null;
+      if (built){
+        const item = templateItem(o.template) || TEMPLATE_ITEMS.find(t => tplName.startsWith(t.prefix));
+        const fontKey = o.fontOverride != null ? (FONT_OPTIONS[o.fontOverride]||{}).key : (item && item.fontKey);
+        return {order:o, icon:null, svg:built.svg, w:built.w, h:built.h, textSize:built.textSize,
+                template:tplName, badGlyphs:missingGlyphs(o.text, fontKey)};
+      }
+      /* 樣板找不到就先照純文字款生成,並在卡片上標示缺哪一張樣板 */
+      const fallback = buildSvg(o, null, settings);
+      return {order:o, icon:null, svg:fallback.svg, w:fallback.w, h:fallback.h, textSize:fallback.textSize,
+              template:tplName, missingTemplate:tplName};
+    }
     const key = findIconKey(o.zodiac);
     const icon = key ? library[key] : null;
     const iconSize = (key && iconSizes[key] != null) ? iconSizes[key] : settings.iconSize;
     const gap1 = (key && iconGaps[key] != null) ? iconGaps[key] : settings.gap1;
     const s2 = (iconSize === settings.iconSize && gap1 === settings.gap1) ? settings : {...settings, iconSize, gap1};
-    const {svg, w, h} = buildSvg(o, icon, s2);
-    return {order:o, icon, svg, w, h, missing: !icon && !ZODIAC_FALLBACK[o.zodiac] && o.zodiac};
+    const {svg, w, h, textSize} = buildSvg(o, icon, s2);
+    return {order:o, icon, svg, w, h, textSize, missing: !icon && !ZODIAC_FALLBACK[o.zodiac] && o.zodiac};
   });
 }
 
@@ -1008,23 +1289,36 @@ function render(){
   document.getElementById("emptyHint").style.display = rs.length ? "none" : "";
 
   const missing = [...new Set(rs.filter(r => r.missing).map(r => r.order.zodiac))];
-  document.getElementById("missing").textContent = missing.length ? "素材庫缺少圖案:"+missing.join("、")+"(請到步驟①上傳同名 SVG)" : "";
+  const missingTpl = [...new Set(rs.filter(r => r.missingTemplate).map(r => r.missingTemplate))];
+  const msgs = [];
+  if (missing.length) msgs.push("素材庫缺少圖案:"+missing.join("、"));
+  if (missingTpl.length) msgs.push("缺少樣板:"+missingTpl.join("、"));
+  document.getElementById("missing").textContent = msgs.length ? msgs.join("；")+"(請到步驟①上傳同名 SVG)" : "";
 
   const grid = document.getElementById("resultGrid");
   grid.innerHTML = "";
   rs.forEach((r, idx) => {
     const isEditing = editingCardId === r.order.id;
     const card = document.createElement("div");
-    card.className = "r-card" + (r.missing ? " missing" : "") + (isEditing ? " editing" : "");
+    card.className = "r-card" + ((r.missing || r.missingTemplate || r.badGlyphs) ? " missing" : "") + (isEditing ? " editing" : "");
     const prev = document.createElement("div");
     prev.className = "preview"; prev.innerHTML = r.svg;
     const info = document.createElement("div");
     info.className = "info";
-    const meta = [r.order.zodiac, r.order.color, r.order.qty>1 ? "x"+r.order.qty : ""].filter(Boolean).join(" · ");
+    const meta = [r.template || r.order.zodiac, r.order.color, r.order.qty>1 ? "x"+r.order.qty : ""].filter(Boolean).join(" · ");
     const idTag = r.order.orderId ? " #"+r.order.orderId.slice(-6) : "";
     info.innerHTML = '<div class="t"></div><div class="m"></div>';
-    info.querySelector(".t").textContent = r.order.text || (r.order.zodiac ? "("+r.order.zodiac+" 僅圖案)" : "(無文字)");
+    info.querySelector(".t").textContent = r.order.text || (r.template ? "("+r.template+" 無文字)" : (r.order.zodiac ? "("+r.order.zodiac+" 僅圖案)" : "(無文字)"));
     info.querySelector(".m").innerHTML = esc(meta) + "<br>" + esc(r.order.name + idTag);
+
+    const warn = [];
+    if (r.missingTemplate) warn.push("找不到樣板「"+r.missingTemplate+"」,先用純文字生成(請到步驟①上傳同名 SVG)");
+    if (r.badGlyphs) warn.push("這套字型沒有「"+r.badGlyphs+"」,刻出來會是空白,請換字體或改字");
+    if (warn.length){
+      const w = document.createElement("div");
+      w.className = "warn"; w.textContent = "⚠ " + warn.join("；");
+      info.appendChild(w);
+    }
 
     const toggleEdit = () => { editingCardId = isEditing ? null : r.order.id; render(); };
     prev.addEventListener("click", toggleEdit);
@@ -1035,7 +1329,9 @@ function render(){
     closeBtn.onclick = e => { e.stopPropagation(); removeResult(r.order); };
 
     if (isEditing){
-      const defaultIdx = r.order.zodiac ? settings.fontIdx : PURE_TEXT_FONT_IDX;
+      const tplItem = r.template ? (templateItem(r.order.template) || TEMPLATE_ITEMS.find(t => r.template.startsWith(t.prefix))) : null;
+      const tplFontIdx = tplItem ? FONT_OPTIONS.findIndex(f => f.key === tplItem.fontKey) : -1;
+      const defaultIdx = tplFontIdx >= 0 ? tplFontIdx : (r.order.zodiac ? settings.fontIdx : PURE_TEXT_FONT_IDX);
       const fontEdit = document.createElement("div");
       fontEdit.className = "fontedit";
       const lab = document.createElement("label"); lab.textContent = "這一筆的字體";
@@ -1045,6 +1341,57 @@ function render(){
       sel.addEventListener("click", e => e.stopPropagation());
       sel.addEventListener("change", () => { r.order.fontOverride = Number(sel.value); render(); });
       fontEdit.append(lab, sel);
+
+      /* 自動排版偶爾不夠準(例如文字特別長、超出圖案範圍),留一個手動微調的退路:
+         大小/位置用 change(離開欄位時)才套用,不用 input 即時套用,
+         不然每打一個字就整張卡片重繪一次,輸入框會一直失焦打不下去。 */
+      if (r.order.text){
+        /* 粗體是在原字重上再加重(不是固定套 700),字型檔沒有真的粗體字重時
+           瀏覽器會自動模擬(faux bold)。 */
+        const boldRow = document.createElement("label");
+        boldRow.className = "boldrow";
+        const boldChk = document.createElement("input");
+        boldChk.type = "checkbox";
+        boldChk.checked = r.order.boldOverride != null ? r.order.boldOverride : defaultBold(r.order);
+        boldChk.addEventListener("click", e => e.stopPropagation());
+        boldChk.addEventListener("change", () => { r.order.boldOverride = boldChk.checked; render(); });
+        boldRow.append(boldChk, document.createTextNode(" 粗體"));
+        fontEdit.appendChild(boldRow);
+
+        const posRow = document.createElement("div");
+        posRow.className = "posrow";
+        const mkNum = (label, title, val, onCommit) => {
+          const wrap = document.createElement("div");
+          const l = document.createElement("label"); l.textContent = label;
+          if (title) l.title = title;
+          const inp = document.createElement("input");
+          inp.type = "number"; inp.step = "1"; inp.value = val;
+          if (title) inp.title = title;
+          inp.addEventListener("click", e => e.stopPropagation());
+          inp.addEventListener("change", () => { onCommit(inp.value); render(); });
+          wrap.append(l, inp);
+          return wrap;
+        };
+        posRow.append(
+          mkNum("大小(px)", "文字大小,單位 px", r.order.fontSizeOverride != null ? r.order.fontSizeOverride : Math.round(r.textSize||0),
+            v => { const n = Number(v); if (v === "" || !n) delete r.order.fontSizeOverride; else r.order.fontSizeOverride = n; }),
+          mkNum("X(→+)", "位置 X:正數往右,負數往左", r.order.offsetX || 0, v => { const n = Number(v)||0; if (n) r.order.offsetX = n; else delete r.order.offsetX; }),
+          mkNum("Y(↑+)", "位置 Y:正數往上,負數往下", r.order.offsetY || 0, v => { const n = Number(v)||0; if (n) r.order.offsetY = n; else delete r.order.offsetY; })
+        );
+        fontEdit.appendChild(posRow);
+
+        if (r.order.fontSizeOverride != null || r.order.offsetX || r.order.offsetY || r.order.boldOverride != null){
+          const resetBtn = document.createElement("button");
+          resetBtn.className = "btn-sm reset-btn"; resetBtn.textContent = "還原成自動大小/位置/粗細";
+          resetBtn.onclick = e => {
+            e.stopPropagation();
+            delete r.order.fontSizeOverride; delete r.order.offsetX; delete r.order.offsetY; delete r.order.boldOverride;
+            render();
+          };
+          fontEdit.appendChild(resetBtn);
+        }
+      }
+
       info.appendChild(fontEdit);
     }
 
@@ -1611,6 +1958,12 @@ renderLibrary();
 renderSettings();
 renderFontStatus();
 render();
+/* 文字的位置與大小是用 canvas 量出來的,字體還沒載入時量到的是替代字體、版面會跑掉,
+   所以先把打包的字體真的載進瀏覽器,載完再重畫一次。 */
+if (document.fonts && document.fonts.load){
+  Promise.all(Object.values(FONT_FACE_SRC).map(m => document.fonts.load(m.weight+" 40px '"+m.family+"'")))
+    .then(() => render()).catch(() => {});
+}
 (function(){
   const t = todayParts();
   document.getElementById("simOrderDate").value = t.y+"-"+String(t.m).padStart(2,"0")+"-"+String(t.d).padStart(2,"0");
