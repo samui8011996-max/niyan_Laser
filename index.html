@@ -82,8 +82,11 @@
     background:rgba(0,0,0,.55);color:#fff;border:none;font-size:14px;line-height:1;cursor:pointer;
     z-index:2;display:flex;align-items:center;justify-content:center;padding:0}
   .r-card .close-x:hover{background:var(--danger)}
-  .r-card .preview{background:#F5F4F0;padding:10px;display:flex;justify-content:center;cursor:pointer}
-  .r-card .preview svg{max-width:100%;height:auto}
+  /* 不同款式的 SVG 長寬比差很多(純文字款矮寬、星座款方正、辦公室款接近方形),
+     固定預覽區高度、讓圖案照原比例縮放置中,格子才會整齊一致,不會忽高忽低。 */
+  .r-card .preview{background:#F5F4F0;padding:10px;display:flex;align-items:center;justify-content:center;
+    cursor:pointer;height:200px}
+  .r-card .preview svg{max-width:100%;max-height:100%;width:auto;height:auto}
   .r-card .info{padding:10px 12px 12px}
   .r-card .t{font-size:13px;font-weight:700;cursor:pointer}
   .r-card .m{font-size:11.5px;color:var(--muted);margin-top:3px;line-height:1.6}
@@ -692,9 +695,13 @@ function templateTextLayout(geom, item, text, font, scalePct, sizeOverride, weig
   }
   maxSize = maxSize * (Number(scalePct) || 100) / 100;
 
+  /* 卡片上按 Enter 可以換行,這裡用「整塊多行文字」的寬高去跑自動縮放,
+     單行文字時公式會退化成原本的樣子(totalHeight = ascent+descent)。 */
+  const w0 = weight != null ? weight : font.weight;
+  const lines = splitLines(text);
   const REF = 100;
-  const m0 = measureTextMetrics(text, font.value, weight != null ? weight : font.weight, REF, 0);
-  const ink0 = Math.max(1, m0.ascent + m0.descent);
+  const mm0 = measureLines(lines, font.value, w0, REF, 0);
+  const ink0 = Math.max(1, mm0.totalHeight);
   let size;
   if (sizeOverride != null && sizeOverride > 0){
     size = sizeOverride;
@@ -707,14 +714,15 @@ function templateTextLayout(geom, item, text, font, scalePct, sizeOverride, weig
       const t = Math.min(1, dy / b);
       const half = a * Math.sqrt(Math.max(0.04, 1 - t*t));
       const maxW = Math.max(10, half*2 - padX*2);
-      const w = m0.width * size / REF;
+      const w = mm0.maxWidth * size / REF;
       if (w <= maxW) break;
       size = size * (maxW / w);
     }
     size = Math.max(6, size);
   }
-  const m = measureTextMetrics(text, font.value, weight != null ? weight : font.weight, size, 0);
-  return {x:cx, y: centerY + (m.ascent - m.descent)/2, size};
+  const mm = measureLines(lines, font.value, w0, size, 0);
+  const firstBaselineY = centerY - mm.totalHeight/2 + mm.firstAscent;
+  return {x:cx, firstBaselineY, lineHeight:mm.lineHeight, lines, size};
 }
 
 /* 這套字型(AaWanWan)缺少部分繁體字,直接雷雕會刻出空白豆腐格,所以先挑出缺的字提醒 */
@@ -738,16 +746,6 @@ function missingGlyphs(text, fontKey){
 }
 
 let _measureCanvas = null;
-function measureTextWidth(text, fontFamily, fontWeight, fontSize, letterSpacing){
-  if (!_measureCanvas) _measureCanvas = document.createElement("canvas");
-  const ctx = _measureCanvas.getContext("2d");
-  ctx.font = fontWeight+" "+fontSize+"px "+fontFamily;
-  let usesCtxSpacing = false;
-  if ("letterSpacing" in ctx){ ctx.letterSpacing = letterSpacing+"px"; usesCtxSpacing = true; }
-  let w = ctx.measureText(text).width;
-  if (!usesCtxSpacing && letterSpacing) w += letterSpacing * Math.max(0, text.length - 1);
-  return w;
-}
 
 /* 量出文字實際筆畫的寬高(用 actualBoundingBox,而不是整個字級行高),
    讓純文字款匯出的尺寸能貼齊筆畫,不會因為行高預留而多出上下空白。 */
@@ -763,6 +761,29 @@ function measureTextMetrics(text, fontFamily, fontWeight, fontSize, letterSpacin
   const ascent = m.actualBoundingBoxAscent != null ? m.actualBoundingBoxAscent : fontSize * 0.75;
   const descent = m.actualBoundingBoxDescent != null ? m.actualBoundingBoxDescent : fontSize * 0.2;
   return {width, ascent, descent};
+}
+
+/* ── 多行刻印文字 ── 卡片上編輯文字時可以直接按 Enter 換行,以下負責量測與排版。
+   單行文字時公式會退化成跟原本一樣(lines.length===1 時 totalHeight = ascent+descent),
+   所以沒有另外寫一套單行邏輯。 */
+function splitLines(text){ return String(text == null ? "" : text).replace(/\r\n?/g, "\n").split("\n"); }
+function measureLines(lines, fontFamily, fontWeight, fontSize, letterSpacing){
+  const lineHeight = fontSize * 1.25;
+  let maxWidth = 0;
+  const metrics = lines.map(line => {
+    const m = measureTextMetrics(line.length ? line : " ", fontFamily, fontWeight, fontSize, letterSpacing);
+    if (m.width > maxWidth) maxWidth = m.width;
+    return m;
+  });
+  const firstAscent = metrics[0].ascent;
+  const lastDescent = metrics[metrics.length - 1].descent;
+  const totalHeight = (lines.length - 1) * lineHeight + firstAscent + lastDescent;
+  return {maxWidth, firstAscent, lastDescent, lineHeight, totalHeight};
+}
+/* 每行各自用 text-anchor:middle 置中(不是整塊文字方塊置中),這樣長短不一的
+   多行文字(例如「Yu」疊「提早退休」)才會像手寫賀卡一樣一行一行都置中對齊。 */
+function renderTspans(lines, x, firstBaselineY, lineHeight){
+  return lines.map((line, i) => '<tspan x="'+x+'" y="'+(firstBaselineY + i*lineHeight)+'">'+esc(line)+'</tspan>').join("");
 }
 
 /* 辦公室款(AaWanWan)預設就用粗體,因為原字重刻在木片/公仔上偏細,不容易看清楚。
@@ -799,32 +820,37 @@ function buildSvg(order, iconSvgString, s){
   const offX = order.offsetX || 0, offY = -(order.offsetY || 0);
   const weight = effectiveWeight(order, font);
 
+  /* 卡片上按 Enter 可以換行,量測與排版一律走多行版本(單行文字時公式會自動退化成原本的樣子)。 */
+  const lines = hasText ? splitLines(order.text) : null;
+
   /* 純文字款(無圖案)不套用固定畫布,改成貼齊文字邊緣的緊湊尺寸(留一點點邊距),
      這樣例如三個字就只有三個字的寬度,雷雕時不會留一大片多餘空白。 */
   if (!hasIcon && hasText){
-    const m = measureTextMetrics(order.text, font.value, weight, fontSize, s.letterSpacing);
+    const mm = measureLines(lines, font.value, weight, fontSize, s.letterSpacing);
     const padX = Math.max(6, fontSize * 0.12);
     const padY = Math.max(4, fontSize * 0.12);
-    const w = m.width + padX * 2;
-    const h = m.ascent + m.descent + padY * 2;
-    const textY = padY + m.ascent;
+    const w = mm.maxWidth + padX * 2;
+    const h = mm.totalHeight + padY * 2;
+    const firstBaselineY = padY + mm.firstAscent;
     const bg = s.bgTransparent ? "" : '<rect width="100%" height="100%" fill="#ffffff"/>';
     const style = fontFaceStyle(font.key);
-    const text = '<text x="'+(w/2+offX)+'" y="'+(textY+offY)+'" text-anchor="middle" font-size="'+fontSize+'" font-weight="'+weight+'" letter-spacing="'+s.letterSpacing+'" font-family="'+font.value.replace(/"/g,"'")+'" fill="'+INK+'">'+esc(order.text)+'</text>';
+    const tspans = renderTspans(lines, w/2+offX, firstBaselineY+offY, mm.lineHeight);
+    const text = '<text text-anchor="middle" font-size="'+fontSize+'" font-weight="'+weight+'" letter-spacing="'+s.letterSpacing+'" font-family="'+font.value.replace(/"/g,"'")+'" fill="'+INK+'">'+tspans+'</text>';
     return {svg:'<svg xmlns="http://www.w3.org/2000/svg" width="'+w+'" height="'+h+'" viewBox="0 0 '+w+' '+h+'">'+style+bg+text+'</svg>', w, h, textSize:fontSize};
   }
+
+  const mm = hasText ? measureLines(lines, font.value, weight, fontSize, s.letterSpacing) : null;
 
   let totalH = 0;
   if (hasIcon) totalH += s.iconSize;
   if (showLine) totalH += s.gap1 + s.lineWidth + s.gap2;
-  if (hasText) totalH += fontSize;
+  if (hasText) totalH += mm.totalHeight;
   const top = (s.canvasH - totalH) / 2;
   const cx = s.canvasW / 2;
 
   let lineLen = s.lineLen;
   if (hasText){
-    const textW = measureTextWidth(order.text, font.value, weight, fontSize, s.letterSpacing);
-    lineLen = Math.max(s.lineLen, textW + 40);
+    lineLen = Math.max(s.lineLen, mm.maxWidth + 40);
   }
 
   let parts = "";
@@ -845,7 +871,9 @@ function buildSvg(order, iconSvgString, s){
   }
 
   if (hasText){
-    parts += '<text x="'+(cx+offX)+'" y="'+(y + fontSize*0.8 + offY)+'" text-anchor="middle" font-size="'+fontSize+'" font-weight="'+weight+'" letter-spacing="'+s.letterSpacing+'" font-family="'+font.value.replace(/"/g,"'")+'" fill="'+INK+'">'+esc(order.text)+'</text>';
+    const firstBaselineY = y + mm.firstAscent + offY;
+    const tspans = renderTspans(lines, cx+offX, firstBaselineY, mm.lineHeight);
+    parts += '<text text-anchor="middle" font-size="'+fontSize+'" font-weight="'+weight+'" letter-spacing="'+s.letterSpacing+'" font-family="'+font.value.replace(/"/g,"'")+'" fill="'+INK+'">'+tspans+'</text>';
   }
 
   const bg = s.bgTransparent ? "" : '<rect width="100%" height="100%" fill="#ffffff"/>';
@@ -871,19 +899,20 @@ function buildTemplateSvg(order, tplName, tplSvg, s){
   if (order.text){
     const lay = templateTextLayout(geom, item, order.text, font, s.tplTextScale, order.fontSizeOverride, weight);
     const x = lay.x + (order.offsetX || 0);
-    const y = lay.y - (order.offsetY || 0);   // 輸入正數往上,SVG y 座標要取負號
+    const firstBaselineY = lay.firstBaselineY - (order.offsetY || 0);   // 輸入正數往上,SVG y 座標要取負號
     textSize = lay.size;
     style = fontFaceStyle(font.key);
-    parts += '<text x="'+x+'" y="'+y+'" text-anchor="middle" font-size="'+lay.size+'"'
+    const tspans = renderTspans(lay.lines, x, firstBaselineY, lay.lineHeight);
+    parts += '<text text-anchor="middle" font-size="'+lay.size+'"'
           + ' font-weight="'+weight+'" font-family="'+font.value.replace(/"/g,"'")+'" fill="'+INK+'">'
-          + esc(order.text) + '</text>';
+          + tspans + '</text>';
   }
   return {svg:'<svg xmlns="http://www.w3.org/2000/svg" width="'+geom.w+'" height="'+geom.h+'" viewBox="'+info.viewBox+'">'
               + style + parts + '</svg>', w:geom.w, h:geom.h, textSize};
 }
 
 /* ── 下載 ── */
-function sanitizeFilename(t){ return t.replace(/[\\/:*?"<>|]/g,"_").slice(0,60); }
+function sanitizeFilename(t){ return t.replace(/[\r\n]+/g,"_").replace(/[\\/:*?"<>|]/g,"_").slice(0,60); }
 function fileNameFor(o){
   const base = (o.orderId||"訂單")+"_"+(o.name||"");
   const tplName = templateNameFor(o);
@@ -1334,7 +1363,19 @@ function render(){
       const defaultIdx = tplFontIdx >= 0 ? tplFontIdx : (r.order.zodiac ? settings.fontIdx : PURE_TEXT_FONT_IDX);
       const fontEdit = document.createElement("div");
       fontEdit.className = "fontedit";
-      const lab = document.createElement("label"); lab.textContent = "這一筆的字體";
+
+      /* 刻印文字本身也能直接改,按 Enter 換行(多行文字會逐行置中排版)。
+         跟大小/位置一樣用 change(離開欄位)才套用,不然每打一個字整張卡片就重繪一次,
+         輸入到一半就會失焦。 */
+      const textLab = document.createElement("label"); textLab.textContent = "刻印文字(可按 Enter 換行)";
+      const textArea = document.createElement("textarea");
+      textArea.rows = 2;
+      textArea.value = r.order.text || "";
+      textArea.addEventListener("click", e => e.stopPropagation());
+      textArea.addEventListener("change", () => { r.order.text = textArea.value; render(); });
+      fontEdit.append(textLab, textArea);
+
+      const lab = document.createElement("label"); lab.textContent = "這一筆的字體"; lab.style.marginTop = "10px";
       const sel = document.createElement("select");
       FONT_OPTIONS.forEach((o,i) => { const op = document.createElement("option"); op.value = i; op.textContent = o.label; sel.appendChild(op); });
       sel.value = r.order.fontOverride != null ? r.order.fontOverride : defaultIdx;
