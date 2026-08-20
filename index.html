@@ -433,6 +433,15 @@ const TEMPLATE_ITEMS = [
        也含有這兩個詞,只用那兩個詞比對會把星座款誤判成辦公室款。 */
     match: t => t.includes("辦公室療癒首選") && t.includes("一對"),
   },
+  {
+    key:"辦公室單隻",
+    label:"辦公室發財語錄 胖胖金運招福貓(中)",
+    prefix:"辦公室_",           // 單隻款樣板(辦公室_財富自由.svg 等),不是一對
+    fontKey:"WANWAN",
+    maxFontSize:62,
+    maxFontSizeWithArt:52,
+    match: t => t.includes("辦公室發財語錄"),
+  },
 ];
 const DEFAULT_PATTERN = "無圖案";
 /* 文字可用範圍取「外框內接橢圓」的比例:0.9 大約等於樣板外框的內緣再留一點邊 */
