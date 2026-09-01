@@ -501,29 +501,38 @@ const saveFontData = () => { try { localStorage.setItem(FONT_KEY, JSON.stringify
 
 /* ── 訂單解析 ── */
 function parseNote(note){
+  /* 有些訂單只填了顏色(金運/招福/顏色),還沒填圖案或文字,也要當成合法的一筆訂單,
+     不能因為缺了刻印文字/星座/款式/刻印圖案這些關鍵字就整筆丟掉。 */
   if (typeof note !== "string"
-      || (!note.includes("刻印文字") && !note.includes("星座") && !note.includes("款式") && !note.includes("刻印圖案"))) return null;
+      || (!note.includes("刻印文字") && !note.includes("星座") && !note.includes("款式") && !note.includes("刻印圖案")
+          && !note.includes("顏色") && !note.includes("金運") && !note.includes("招福"))) return null;
+  /* 數量(x1)永遠接在整段備注的最後面,不一定緊跟著「刻印文字」欄位——如果某個
+     欄位剛好是最後一個有值的欄位(例如還沒填刻印文字/圖案),它後面接的「x1」
+     沒有下一個逗號或欄位名稱擋著,會被那個欄位的正規表達式一起吃進去
+     (例如「招福: 炭錢黑 x1」會把值抓成「炭錢黑 x1」)。所以先把數量從整段備注
+     尾端拿掉,後面每個欄位的正規表達式都不用再各自處理這個問題。 */
+  const qtyMatch = note.match(/\s*[xX×](\d+)\s*$/);
+  const qty = qtyMatch ? parseInt(qtyMatch[1], 10) : 1;
+  const cleanNote = qtyMatch ? note.slice(0, qtyMatch.index) : note;
   /* 星座欄位常常會帶日期區間,例如「獅子座(7/23~8/22)」,只留星座名稱,
      日期區間不需要顯示、也不需要進檔名。 */
-  let zodiac = (note.match(/星座[:：]\s*(.+?)\s*(?=刻印文字|[,，]|$)/)||[])[1]?.trim() || "";
+  let zodiac = (cleanNote.match(/星座[:：]\s*(.+?)\s*(?=刻印文字|[,，]|$)/)||[])[1]?.trim() || "";
   zodiac = zodiac.replace(/[(（][^)）]*[)）]/g, "").trim();
   /* 辦公室款用「刻印圖案」指定要套哪一張樣板(無圖案 / 財富自由 / 提早退休…) */
-  const pattern = (note.match(/刻印圖案[:：]\s*([^,，\/]+?)\s*(?=[,，\/]|\s\S+[:：]|$)/)||[])[1]?.trim() || "";
-  let color = (note.match(/顏色[:：]\s*(.+?)\s*(?=[,，]|星座|$)/)||[])[1]?.trim() || "";
+  const pattern = (cleanNote.match(/刻印圖案[:：]\s*([^,，\/]+?)\s*(?=[,，\/]|\s\S+[:：]|$)/)||[])[1]?.trim() || "";
+  let color = (cleanNote.match(/顏色[:：]\s*(.+?)\s*(?=[,，]|星座|$)/)||[])[1]?.trim() || "";
   /* 對貓款是兩隻一組,顏色分開寫成「金運: ◯◯, 招福: ◯◯」,兩個值分開存,
      檔名要用到單獨的金運色/招福色,不能只留合併顯示用的 color 字串。 */
   let colorPrimary = "", colorSecondary = "";
   if (!color){
     const pairRe = k => new RegExp(k+"[:：]\\s*([^,，\\/]+?)\\s*(?=[,，\\/]|\\s\\S+[:：]|$)");
-    const m1 = note.match(pairRe("金運"));
-    const m2 = note.match(pairRe("招福"));
+    const m1 = cleanNote.match(pairRe("金運"));
+    const m2 = cleanNote.match(pairRe("招福"));
     if (m1) colorPrimary = m1[1].trim();
     if (m2) colorSecondary = m2[1].trim();
     color = [m1 && ("金運 "+colorPrimary), m2 && ("招福 "+colorSecondary)].filter(Boolean).join(" · ");
   }
-  let raw = (note.match(/刻印文字[:：]\s*(.+)$/)||[])[1] || "";
-  const qty = parseInt((raw.match(/\s*[xX×](\d+)\s*$/)||[])[1] || "1", 10);
-  const text = raw.replace(/\s*[xX×]\d+\s*$/,"").trim();
+  const text = (cleanNote.match(/刻印文字[:：]\s*(.+)$/)||[])[1]?.trim() || "";
   return {zodiac, pattern, color, colorPrimary, colorSecondary, text, qty};
 }
 
@@ -542,8 +551,10 @@ function sizeTagFromText(rowText){
      4. 其他有星座欄位的商品──預設歸類「星座貓雷雕」+尺寸,當作星座款的預設分類
    之後如果又新增別的商品類別,在這裡加一條規則就好,不用動 fileNameFor()。 */
 const FILENAME_RULES = {
-  "辦公室一對": {tag: () => "辦公室一對", fields: o => [o.colorPrimary, o.colorSecondary, o.pattern, o.text]},
-  "辦公室單隻": {tag: () => "辦公室單隻", fields: o => [o.colorPrimary, o.colorSecondary, o.pattern, o.text]},
+  /* 辦公室系列的尺寸標在類別後面加括號,例如「辦公室一對(中)」,跟其他款式
+     直接把尺寸接在後面(如「一對小」)的寫法不同,照使用者指定的格式來。 */
+  "辦公室一對": {tag: (o,size) => "辦公室一對"+(size?"("+size+")":""), fields: o => [o.colorPrimary, o.colorSecondary, o.pattern, o.text]},
+  "辦公室單隻": {tag: (o,size) => "辦公室單隻"+(size?"("+size+")":""), fields: o => [o.colorPrimary, o.colorSecondary, o.pattern, o.text]},
   "招福貓對":   {tag: (o,size) => "一對"+size, fields: o => [o.color, o.zodiac, o.text]},
   "胖胖招財貓": {tag: (o,size) => (o.text ? "雷雕" : "木片")+size, fields: o => [o.text, o.color]},
   "星座貓雷雕": {tag: (o,size) => "星座貓雷雕"+size, fields: o => [o.color, o.zodiac, o.text]},
@@ -610,6 +621,9 @@ function rowsToOrders(rows){
     /* 商品名稱可能在任何一欄(不同平台匯出的欄位不一樣),所以拿整列的文字來比對是不是樣板商品 */
     const rowText = cells.join(" ");
     const item = TEMPLATE_ITEMS.find(t => t.match(rowText));
+    /* 辦公室系列(整張樣板)如果連圖案跟文字都沒填,只有顏色,代表客人還沒決定
+       要刻什麼,刻出來會是一張空白貓,沒有意義,直接不產生這一筆結果。 */
+    if (item && !parsed.text && !parsed.pattern) return;
     const fnCategory = fnCategoryFor(rowText, item ? item.key : "", parsed);
     out.push({id:i+"-"+(orderId||parsed.text), name:name.trim(), orderId:orderId.trim(), date,
               template: item ? item.key : "", fnCategory, fnSize: sizeTagFromText(rowText), ...parsed});
@@ -976,7 +990,8 @@ function fileNameFor(o){
   const rule = o.fnCategory && FILENAME_RULES[o.fnCategory];
   if (rule){
     const tag = fnTagFor(o);
-    const fields = rule.fields(o).concat([o.name, o.orderId]).filter(Boolean);
+    /* 姓名+訂單編號放最前面(方便現場對單),刻印內容(顏色/圖案/文字)放後面 */
+    const fields = [o.name, o.orderId].concat(rule.fields(o)).filter(Boolean);
     return sanitizeFilename("【"+tag+"】"+fields.join("_"));
   }
   /* 沒有比對到分類規則的商品(例如舊資料、手動輸入)維持原本的檔名格式 */
