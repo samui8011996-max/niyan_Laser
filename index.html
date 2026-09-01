@@ -265,7 +265,7 @@
       <h2 id="resultTitle">④ 生成結果</h2>
       <button class="btn" id="dlAllBtn" style="display:none" onclick="downloadAll()">⬇ 下載全部(雷雕用 SVG)</button>
     </div>
-    <p class="hint" style="margin-top:10px">每筆結果可下載三種檔案:<b>雷雕用 SVG</b>(推薦,已壓平成單一圖片,匯入 xTool 等雷雕軟體不會跑位變形)、<b>原始向量SVG</b>(保留可編輯的文字與路徑,適合在 Illustrator 等設計軟體開啟,但部分雷雕軟體的 SVG 解析器不支援內嵌字體與巢狀圖案,匯入後可能會跑位/變形)、以及 <b>PNG</b>。「下載全部」會批次下載雷雕用版本。點一下卡片可以展開編輯這一筆的字體、文字大小、位置(X/Y 是文字的位移量,圖案本身不會動),不填就照自動排版。</p>
+    <p class="hint" style="margin-top:10px">每筆結果可下載兩種檔案:<b>雷雕用 SVG</b>(推薦,已壓平成單一圖片,匯入 xTool 等雷雕軟體不會跑位變形)、以及 <b>PNG</b>。「下載全部」會批次下載雷雕用版本。點一下卡片可以展開編輯這一筆的字體、文字大小、位置(X/Y 是文字的位移量,圖案本身不會動),不填就照自動排版。</p>
     <p class="hint" id="emptyHint" style="margin-top:16px">讀取訂單後,每一筆的預覽會顯示在這裡。</p>
     <div id="resultGrid"></div>
   </section>
@@ -993,9 +993,6 @@ function downloadBlob(blob, filename){
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 3000);
 }
-function downloadSvg(svgStr, filename){
-  downloadBlob(new Blob([svgStr],{type:"image/svg+xml"}), filename+".svg");
-}
 
 /* 把 SVG(內含 <text>、內嵌 @font-face、巢狀 <svg> 圖案)畫到畫布上,轉成單一點陣圖。
    許多雷雕軟體(包含 xTool Creative Space)的 SVG 匯入器不支援巢狀 <svg>/viewBox 縮放與內嵌字體,
@@ -1513,13 +1510,10 @@ function render(){
     const b0 = document.createElement("button"); b0.className = "btn-sm active"; b0.textContent = "雷雕用 SVG";
     b0.title = "壓平成單一圖片的 SVG,匯入 xTool 等雷雕軟體不會跑位變形";
     b0.onclick = e => { e.stopPropagation(); downloadFlatSvg(r.svg, fileNameFor(r.order), r.w, r.h); };
-    const b1 = document.createElement("button"); b1.className = "btn-sm"; b1.textContent = "原始向量SVG";
-    b1.title = "保留文字與圖案為向量物件,適合在 Illustrator 等軟體編輯,但匯入部分雷雕軟體可能跑位變形";
-    b1.onclick = e => { e.stopPropagation(); downloadSvg(r.svg, fileNameFor(r.order)); };
     const b2 = document.createElement("button"); b2.className = "btn-sm"; b2.textContent = "PNG";
     b2.onclick = e => { e.stopPropagation(); downloadPng(r.svg, fileNameFor(r.order)); };
     dl.addEventListener("click", e => e.stopPropagation());
-    dl.append(b0, b1, b2);
+    dl.append(b0, b2);
     info.appendChild(dl);
     card.append(prev, info, closeBtn);
     if (catBadge) card.appendChild(catBadge);
