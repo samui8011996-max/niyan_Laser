@@ -86,6 +86,11 @@
     background:rgba(0,0,0,.55);color:#fff;border:none;font-size:14px;line-height:1;cursor:pointer;
     z-index:2;display:flex;align-items:center;justify-content:center;padding:0}
   .r-card .close-x:hover{background:var(--danger)}
+  /* 檔名類別徽章,跟下載檔名開頭的【類別】用同一個值,方便對照 */
+  .r-card .cat-badge{position:absolute;top:6px;left:6px;max-width:calc(100% - 40px);
+    background:rgba(0,0,0,.6);color:var(--gold);font-size:10.5px;font-weight:700;
+    padding:3px 7px;border-radius:6px;z-index:2;letter-spacing:.5px;white-space:nowrap;
+    overflow:hidden;text-overflow:ellipsis}
   /* 不同款式的 SVG 長寬比差很多(純文字款矮寬、星座款方正、辦公室款接近方形),
      固定預覽區高度、讓圖案照原比例縮放置中,格子才會整齊一致,不會忽高忽低。 */
   .r-card .preview{background:#F5F4F0;padding:10px;display:flex;align-items:center;justify-content:center;
@@ -498,7 +503,10 @@ const saveFontData = () => { try { localStorage.setItem(FONT_KEY, JSON.stringify
 function parseNote(note){
   if (typeof note !== "string"
       || (!note.includes("刻印文字") && !note.includes("星座") && !note.includes("款式") && !note.includes("刻印圖案"))) return null;
-  const zodiac = (note.match(/星座[:：]\s*(.+?)\s*(?=刻印文字|[,，]|$)/)||[])[1]?.trim() || "";
+  /* 星座欄位常常會帶日期區間,例如「獅子座(7/23~8/22)」,只留星座名稱,
+     日期區間不需要顯示、也不需要進檔名。 */
+  let zodiac = (note.match(/星座[:：]\s*(.+?)\s*(?=刻印文字|[,，]|$)/)||[])[1]?.trim() || "";
+  zodiac = zodiac.replace(/[(（][^)）]*[)）]/g, "").trim();
   /* 辦公室款用「刻印圖案」指定要套哪一張樣板(無圖案 / 財富自由 / 提早退休…) */
   const pattern = (note.match(/刻印圖案[:：]\s*([^,，\/]+?)\s*(?=[,，\/]|\s\S+[:：]|$)/)||[])[1]?.trim() || "";
   let color = (note.match(/顏色[:：]\s*(.+?)\s*(?=[,，]|星座|$)/)||[])[1]?.trim() || "";
@@ -959,10 +967,15 @@ function buildTemplateSvg(order, tplName, tplSvg, s){
 
 /* ── 下載 ── */
 function sanitizeFilename(t){ return t.replace(/[\r\n]+/g,"_").replace(/[\\/:*?"<>|]/g,"_").slice(0,60); }
+/* 檔名類別標籤(不含【】跟欄位),卡片上的類別徽章也用這個,兩邊才不會兜不起來 */
+function fnTagFor(o){
+  const rule = o.fnCategory && FILENAME_RULES[o.fnCategory];
+  return rule ? rule.tag(o, o.fnSize || "") : "";
+}
 function fileNameFor(o){
   const rule = o.fnCategory && FILENAME_RULES[o.fnCategory];
   if (rule){
-    const tag = rule.tag(o, o.fnSize || "");
+    const tag = fnTagFor(o);
     const fields = rule.fields(o).concat([o.name, o.orderId]).filter(Boolean);
     return sanitizeFilename("【"+tag+"】"+fields.join("_"));
   }
@@ -1409,6 +1422,14 @@ function render(){
     closeBtn.className = "close-x"; closeBtn.textContent = "×"; closeBtn.title = "刪除這一筆";
     closeBtn.onclick = e => { e.stopPropagation(); removeResult(r.order); };
 
+    /* 檔名類別(一對小/雷雕大/木片中/辦公室一對…),跟下載檔名開頭的【類別】同一個值 */
+    const catTag = fnTagFor(r.order);
+    let catBadge = null;
+    if (catTag){
+      catBadge = document.createElement("div");
+      catBadge.className = "cat-badge"; catBadge.textContent = "【"+catTag+"】"; catBadge.title = catTag;
+    }
+
     if (isEditing){
       const tplItem = r.template ? (templateItem(r.order.template) || TEMPLATE_ITEMS.find(t => r.template.startsWith(t.prefix))) : null;
       const tplFontIdx = tplItem ? FONT_OPTIONS.findIndex(f => f.key === tplItem.fontKey) : -1;
@@ -1501,6 +1522,7 @@ function render(){
     dl.append(b0, b1, b2);
     info.appendChild(dl);
     card.append(prev, info, closeBtn);
+    if (catBadge) card.appendChild(catBadge);
     grid.appendChild(card);
   });
 }
