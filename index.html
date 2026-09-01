@@ -502,20 +502,50 @@ function parseNote(note){
   /* 辦公室款用「刻印圖案」指定要套哪一張樣板(無圖案 / 財富自由 / 提早退休…) */
   const pattern = (note.match(/刻印圖案[:：]\s*([^,，\/]+?)\s*(?=[,，\/]|\s\S+[:：]|$)/)||[])[1]?.trim() || "";
   let color = (note.match(/顏色[:：]\s*(.+?)\s*(?=[,，]|星座|$)/)||[])[1]?.trim() || "";
+  /* 對貓款是兩隻一組,顏色分開寫成「金運: ◯◯, 招福: ◯◯」,兩個值分開存,
+     檔名要用到單獨的金運色/招福色,不能只留合併顯示用的 color 字串。 */
+  let colorPrimary = "", colorSecondary = "";
   if (!color){
-    /* 對貓款是兩隻一組,顏色分開寫成「金運: ◯◯, 招福: ◯◯」 */
-    const pairs = [];
-    ["金運","招福"].forEach(k => {
-      /* 值取到「逗號 / 斜線 / 下一個欄位名稱」為止,才不會把後面的「刻印圖案: ◯◯」一起吃進來 */
-      const m = note.match(new RegExp(k+"[:：]\\s*([^,，\\/]+?)\\s*(?=[,，\\/]|\\s\\S+[:：]|$)"));
-      if (m) pairs.push(k+" "+m[1].trim());
-    });
-    color = pairs.join(" · ");
+    const pairRe = k => new RegExp(k+"[:：]\\s*([^,，\\/]+?)\\s*(?=[,，\\/]|\\s\\S+[:：]|$)");
+    const m1 = note.match(pairRe("金運"));
+    const m2 = note.match(pairRe("招福"));
+    if (m1) colorPrimary = m1[1].trim();
+    if (m2) colorSecondary = m2[1].trim();
+    color = [m1 && ("金運 "+colorPrimary), m2 && ("招福 "+colorSecondary)].filter(Boolean).join(" · ");
   }
   let raw = (note.match(/刻印文字[:：]\s*(.+)$/)||[])[1] || "";
   const qty = parseInt((raw.match(/\s*[xX×](\d+)\s*$/)||[])[1] || "1", 10);
   const text = raw.replace(/\s*[xX×]\d+\s*$/,"").trim();
-  return {zodiac, pattern, color, text, qty};
+  return {zodiac, pattern, color, colorPrimary, colorSecondary, text, qty};
+}
+
+/* 從商品名稱裡的「(小)/(中)/(大)」抓出尺寸字樣,拼進檔名類別標籤(例如「一對小」)。
+   抓不到就傳回空字串,標籤只留類別本身。 */
+function sizeTagFromText(rowText){
+  return (String(rowText||"").match(/[((]([小中大])[))]/)||[])[1] || "";
+}
+
+/* 下載檔名的分類規則:依商品名稱(整列文字)判斷屬於哪個類別,決定輸出檔名的
+   類別標籤跟欄位順序。找不到符合類別的商品就照舊格式(訂單編號_姓名_文字)。
+   規則有先後順序(由上而下第一個符合的生效):
+     1. 辦公室一對/辦公室單隻──已經由 TEMPLATE_ITEMS 判斷過,直接沿用其 key
+     2. 招財招福貓一對(小/中/大)──星座對貓款,標籤「一對」+尺寸
+     3. 胖胖招財貓(大/中/小,不含「招福」)──雷雕/木片款,依有沒有刻印文字決定標籤
+     4. 其他有星座欄位的商品──預設歸類「星座貓雷雕」+尺寸,當作星座款的預設分類
+   之後如果又新增別的商品類別,在這裡加一條規則就好,不用動 fileNameFor()。 */
+const FILENAME_RULES = {
+  "辦公室一對": {tag: () => "辦公室一對", fields: o => [o.colorPrimary, o.colorSecondary, o.pattern, o.text]},
+  "辦公室單隻": {tag: () => "辦公室單隻", fields: o => [o.colorPrimary, o.colorSecondary, o.pattern, o.text]},
+  "招福貓對":   {tag: (o,size) => "一對"+size, fields: o => [o.color, o.zodiac, o.text]},
+  "胖胖招財貓": {tag: (o,size) => (o.text ? "雷雕" : "木片")+size, fields: o => [o.text, o.color]},
+  "星座貓雷雕": {tag: (o,size) => "星座貓雷雕"+size, fields: o => [o.color, o.zodiac, o.text]},
+};
+function fnCategoryFor(rowText, templateKey, parsed){
+  if (templateKey === "辦公室一對" || templateKey === "辦公室單隻") return templateKey;
+  if (rowText.includes("招財招福貓") && rowText.includes("一對")) return "招福貓對";
+  if (rowText.includes("胖胖招財貓") && !rowText.includes("招福")) return "胖胖招財貓";
+  if (parsed.zodiac) return "星座貓雷雕";
+  return "";
 }
 
 function parseDateParts(str){
@@ -563,15 +593,18 @@ function rowsToOrders(rows){
     const cells = row.map(c => String(c ?? ""));
     const noteCell = colMap.note != null ? cells[colMap.note] : cells.find(c => c.includes("刻印文字"));
     const parsed = parseNote(noteCell || "");
-    if (!parsed || (!parsed.text && !parsed.zodiac && !parsed.pattern)) return;
+    /* 木片款(款式=雷雕,但故意沒填刻印文字)沒有文字/星座/圖案,但有顏色,
+       這代表使用者仍然是想要下一筆訂單(等著出木片),不能被這裡的判斷濾掉。 */
+    if (!parsed || (!parsed.text && !parsed.zodiac && !parsed.pattern && !parsed.color)) return;
     const name = colMap.name != null ? (cells[colMap.name]||"") : (cells[1] || "");
     const orderId = colMap.orderId != null ? (cells[colMap.orderId]||"") : (cells.find(c => /^\d{14,}$/.test(c.trim())) || "");
     const date = colMap.date != null ? (cells[colMap.date]||"") : "";
     /* 商品名稱可能在任何一欄(不同平台匯出的欄位不一樣),所以拿整列的文字來比對是不是樣板商品 */
     const rowText = cells.join(" ");
     const item = TEMPLATE_ITEMS.find(t => t.match(rowText));
+    const fnCategory = fnCategoryFor(rowText, item ? item.key : "", parsed);
     out.push({id:i+"-"+(orderId||parsed.text), name:name.trim(), orderId:orderId.trim(), date,
-              template: item ? item.key : "", ...parsed});
+              template: item ? item.key : "", fnCategory, fnSize: sizeTagFromText(rowText), ...parsed});
   });
   return out;
 }
@@ -927,9 +960,15 @@ function buildTemplateSvg(order, tplName, tplSvg, s){
 /* ── 下載 ── */
 function sanitizeFilename(t){ return t.replace(/[\r\n]+/g,"_").replace(/[\\/:*?"<>|]/g,"_").slice(0,60); }
 function fileNameFor(o){
+  const rule = o.fnCategory && FILENAME_RULES[o.fnCategory];
+  if (rule){
+    const tag = rule.tag(o, o.fnSize || "");
+    const fields = rule.fields(o).concat([o.name, o.orderId]).filter(Boolean);
+    return sanitizeFilename("【"+tag+"】"+fields.join("_"));
+  }
+  /* 沒有比對到分類規則的商品(例如舊資料、手動輸入)維持原本的檔名格式 */
   const base = (o.orderId||"訂單")+"_"+(o.name||"");
   const tplName = templateNameFor(o);
-  /* 辦公室款把樣板名一起寫進檔名,現場才分得出是哪一張圖 */
   if (tplName) return sanitizeFilename(base+"_"+tplName+"_"+(o.text||"無文字"));
   return sanitizeFilename(base+"_"+(o.text||o.zodiac||"圖案"));
 }
