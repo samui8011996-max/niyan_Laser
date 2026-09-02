@@ -546,7 +546,7 @@ function sizeTagFromText(rowText){
    類別標籤跟欄位順序。找不到符合類別的商品就照舊格式(訂單編號_姓名_文字)。
    規則有先後順序(由上而下第一個符合的生效):
      1. 辦公室一對/辦公室單隻──已經由 TEMPLATE_ITEMS 判斷過,直接沿用其 key
-     2. 招財招福貓一對(小/中/大)──星座對貓款,標籤「一對」+尺寸
+     2. 胖胖貓一對(小/中/大)──星座對貓款,標籤「一對」+尺寸
      3. 胖胖招財貓(大/中/小,不含「招福」)──雷雕/木片款,依有沒有刻印文字決定標籤
      4. 其他有星座欄位的商品──預設歸類「星座貓雷雕」+尺寸,當作星座款的預設分類
    之後如果又新增別的商品類別,在這裡加一條規則就好,不用動 fileNameFor()。 */
@@ -561,7 +561,7 @@ const FILENAME_RULES = {
 };
 function fnCategoryFor(rowText, templateKey, parsed){
   if (templateKey === "辦公室一對" || templateKey === "辦公室單隻") return templateKey;
-  if (rowText.includes("招財招福貓") && rowText.includes("一對")) return "招福貓對";
+  if (rowText.includes("胖胖貓") && rowText.includes("一對")) return "招福貓對";
   if (rowText.includes("胖胖招財貓") && !rowText.includes("招福")) return "胖胖招財貓";
   if (parsed.zodiac) return "星座貓雷雕";
   return "";
