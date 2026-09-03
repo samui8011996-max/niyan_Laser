@@ -428,24 +428,24 @@ const FONT_FACE_SRC = {
 const TEMPLATE_ITEMS = [
   {
     key:"辦公室一對",
-    label:"辦公室療癒首選 胖胖招財招福貓(中)一對",
+    label:"辦公室系列 胖胖貓(中)一對",
     prefix:"辦公室一對_",
     fontKey:"WANWAN",
     maxFontSize:62,          // 無圖案(文字致中)時的字級上限
     maxFontSizeWithArt:52,   // 有圖案(文字偏上)時的字級上限
-    /* 傳進來的是整列訂單資料(含商品名稱欄)的文字。一定要認「辦公室療癒首選」這個字樣,
-       不能只認「招財招福貓」+「一對」——原本星座款的「胖胖招財招福貓一對(小)」商品名稱
-       也含有這兩個詞,只用那兩個詞比對會把星座款誤判成辦公室款。 */
-    match: t => t.includes("辦公室療癒首選") && t.includes("一對"),
+    /* 傳進來的是整列訂單資料(含商品名稱欄)的文字。商品名稱常常變體(辦公室療癒首選/
+       辦公室語錄/辦公室發財語錄…),認「辦公室」這個字樣最穩,再用「一對」分是一對還是單隻。
+       星座款的「胖胖貓一對(小)」商品名稱不含「辦公室」,不會被這裡誤判。 */
+    match: t => t.includes("辦公室") && t.includes("一對"),
   },
   {
     key:"辦公室單隻",
-    label:"辦公室發財語錄 胖胖金運招福貓(中)",
+    label:"辦公室系列 胖胖貓(中)單隻",
     prefix:"辦公室_",           // 單隻款樣板(辦公室_財富自由.svg 等),不是一對
     fontKey:"WANWAN",
     maxFontSize:62,
     maxFontSizeWithArt:52,
-    match: t => t.includes("辦公室發財語錄"),
+    match: t => t.includes("辦公室") && !t.includes("一對"),
   },
 ];
 const DEFAULT_PATTERN = "無圖案";
