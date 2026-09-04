@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>雷雕刻印產生器</title>
+<title>客製化小工具</title>
 <link rel="icon" href="favicon.png" type="image/png">
 <link rel="shortcut icon" href="favicon.png" type="image/png">
 <link rel="apple-touch-icon" href="favicon.png">
@@ -12,7 +12,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="雷雕刻印">
+<meta name="apple-mobile-web-app-title" content="客製化小工具">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -28,6 +28,7 @@
 <script src="default-font-wanwan.js"></script>
 <script src="default-model.js"></script>
 <script src="default-wood.js"></script>
+<script src="default-paper-bg.js"></script>
 <style>
   @font-face{ font-family:'MOBO'; src:url('MOBO-Bold.otf') format('opentype'); font-weight:700; font-style:normal; }
   @font-face{ font-family:'jf-openhuninn'; src:url('jf-openhuninn-2.0.ttf') format('truetype'); font-weight:400; font-style:normal; }
@@ -55,13 +56,30 @@
   textarea{font-family:monospace;resize:vertical}
   label{font-size:11px;color:var(--muted);letter-spacing:1px;display:block;margin-bottom:4px}
   button{cursor:pointer;font-family:inherit}
+
+  /* 數字輸入的自訂加減按鈕(取代原生小箭頭,原生的太小很難點) */
+  input[type=number]{-moz-appearance:textfield}
+  input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none;appearance:none;margin:0}
+  .numstep{display:flex;align-items:stretch;width:100%;max-width:100%;border:1px solid var(--border);
+    border-radius:8px;overflow:hidden;background:var(--bg);min-width:0;box-sizing:border-box}
+  .numstep input[type=number]{flex:1 1 0% !important;width:auto !important;min-width:0 !important;
+    border:none !important;border-radius:0;background:transparent;text-align:center;padding:8px 2px}
+  .numstep input[type=number]:disabled{color:var(--muted)}
+  .numstep-btn{flex:none;width:24px;border:none;background:var(--panel2);color:var(--text);
+    font-size:15px;font-weight:700;line-height:1;display:flex;align-items:center;justify-content:center;
+    user-select:none;touch-action:manipulation}
+  .numstep-btn:hover{background:var(--gold);color:#221C0E}
+  .numstep-btn:active{background:var(--gold-dim)}
+  .numstep-btn:disabled{opacity:.4;cursor:default;background:var(--panel2);color:var(--text)}
   .btn{background:var(--gold);color:#221C0E;border:none;border-radius:8px;
     padding:9px 16px;font-size:13px;font-weight:700}
   .btn-sm{background:var(--panel2);color:var(--text);border:1px solid var(--border);
     border-radius:6px;padding:5px 10px;font-size:12px}
   .btn-sm.active{background:var(--gold);color:#221C0E;font-weight:700;border-color:var(--gold)}
   .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+  .row>div{min-width:0}
   .grid-set{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:12px}
+  .grid-set>div{min-width:0}
   #libraryGrid{display:flex;flex-wrap:wrap;gap:12px;margin-top:16px}
   .icon-card{width:168px;background:var(--panel2);border:1px solid var(--border);
     border-radius:10px;padding:10px;text-align:center}
@@ -146,7 +164,7 @@
   .chiprow{display:flex;gap:8px;flex-wrap:wrap}
   .chiprow .btn-sm{padding:7px 12px}
   .mm-row{display:flex;gap:10px}
-  .mm-row>div{flex:1}
+  .mm-row>div{flex:1;min-width:0}
   .lbl-row{display:flex;justify-content:space-between;align-items:center;
     font-size:11px;color:var(--muted);letter-spacing:1px;margin-bottom:4px}
   .lbl-row span{color:var(--gold);font-weight:700;letter-spacing:0}
@@ -162,18 +180,76 @@
   .pill-toggle input:checked + .track{background:var(--gold);border-color:var(--gold)}
   .pill-toggle input:checked + .track::after{transform:translateX(17px);background:#221C0E}
   .pill-toggle .lbl{font-size:12.5px;color:var(--muted)}
+
+  /* 紙品列印頁(標籤列 / 祝賀卡) */
+  .paper-layout{display:grid;grid-template-columns:260px 1fr;gap:24px;align-items:start}
+  @media (max-width:760px){ .paper-layout{grid-template-columns:1fr} }
+  .paper-panel .blk{margin-bottom:16px}
+  .paper-panel label:not(.pill-toggle){font-size:11px;color:var(--muted);letter-spacing:1px;display:block;margin-bottom:4px}
+  .paper-preview-wrap{display:flex;flex-direction:column;align-items:center;min-width:0}
+  .paper-preview-scroll{max-width:100%;overflow:auto;padding:4px}
+  /* 尺寸直接用 CSS mm,螢幕預覽比例跟實際列印一致(1:1),不用另外換算縮放 */
+  .paper-sheet{background:#fff;color:#111;position:relative;flex:none;
+    box-shadow:0 0 0 1px var(--border),0 6px 20px rgba(0,0,0,.35)}
+  .paper-sheet.label-size{width:100mm;height:150mm}
+  .paper-sheet.card-size{width:150mm;height:100mm}
+  .label-row-list{position:absolute;inset:0;display:flex;flex-direction:column}
+  .label-row-list .lr{flex:1;display:flex;align-items:center;justify-content:center;
+    font-family:'PingFang TC','Microsoft JhengHei',sans-serif;font-weight:900;color:#111;
+    border-bottom:1px dashed #ccc;white-space:nowrap;overflow:hidden;padding:0 4mm}
+  .label-row-list .lr:last-child{border-bottom:none}
+  /* 賀卡色紙底圖:只是預覽時墊在下面看效果用(實際紙張本身就已印好底色),
+     列印/另存 PDF 時一定要排除,不然會把底圖也印上去,跟色紙疊兩層。 */
+  .paper-bg{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;pointer-events:none}
+  @media print{ .paper-bg{ display:none !important } }
+  .card-sheet{position:absolute;inset:0;box-sizing:border-box;padding:8mm 10mm 11mm;
+    font-family:'PingFang TC','Microsoft JhengHei',sans-serif;color:#111;
+    display:flex;flex-direction:column}
+  .card-sheet .card-top{flex:none;display:flex;align-items:baseline;gap:3mm;white-space:nowrap}
+  .card-sheet .card-top .pfx{font-weight:700}
+  .card-sheet .card-top .to{font-weight:800}
+  .card-sheet .card-mid{flex:1;display:flex;align-items:center;justify-content:center;
+    text-align:center;font-weight:800;line-height:1.4;white-space:pre-line;overflow:hidden}
+  .card-sheet .card-bottom{flex:none;display:flex;align-items:baseline;justify-content:flex-end;
+    gap:3mm;white-space:nowrap}
+  .card-sheet .card-bottom .from{font-weight:800}
+  .card-sheet .card-bottom .sfx{font-weight:700}
+  .paper-panel .sizerow{display:flex;gap:8px;align-items:center}
+  .paper-panel .sizerow input[type=text]{flex:1 1 auto}
+  .paper-panel .sizerow .numstep{width:86px;flex:none}
+  .paper-panel .sizerow .u{font-size:10.5px;color:var(--muted);flex:none}
+
+  /* 列印時只留 #printRoot(裡面是要印的那張紙的複製品),其餘全部 display:none 直接
+     從版面移除。原本用 visibility:hidden 只是讓其他區塊「看不見」,並不會讓它們
+     不佔版面高度,所以列印時瀏覽器還是照全網站的高度去分頁,才會印出好幾張空白頁、
+     還把用 position:fixed 定位的內容重複印在每一頁上。改成 display:none 才是真的
+     把其他內容從文件流裡整個拿掉,列印範圍只剩這張紙本身的高度,就只會有一頁。 */
+  #printRoot{display:none}
+  @media print{
+    /* body 本身在螢幕上留了 padding-bottom:60px 給底部呼吸空間,子元素都
+       display:none 之後這個 padding 還是算在 body 自己身上,會把印出來的
+       高度多墊出 60px、超出這張紙的高度,多印出一張幾乎空白的頁,要一併清掉。 */
+    html, body{margin:0 !important;padding:0 !important;height:auto !important}
+    body > *:not(#printRoot){display:none !important}
+    #printRoot{display:block !important}
+    #printRoot .paper-sheet{margin:0;box-shadow:none}
+  }
 </style>
+<style id="paperPageSize">@page{size:100mm 150mm;margin:0}</style>
 </head>
 <body>
 
+<div id="printRoot"></div>
+
 <header>
-  <h1>雷雕<span>刻印</span>產生器</h1>
+  <h1>客製化<span>小工具</span></h1>
   <span class="sub">星座圖案 ＋ 分隔線 ＋ 刻印文字 → SVG</span>
 </header>
 
 <div class="pagetabs">
   <button class="ptab active" data-page="generate">刻印產生</button>
   <button class="ptab" data-page="simulate">雷雕模擬</button>
+  <button class="ptab" data-page="paper">紙品列印</button>
 </div>
 
 <main id="page-generate" class="page show">
@@ -351,8 +427,8 @@
             </div>
             <div>
               <label>高度(mm)</label>
-              <input id="simHeightMM" type="number" min="1" step="0.5">
-              <input id="simHeightSlider" type="range" min="3" max="100" step="0.5" style="margin-top:6px">
+              <input id="simHeightMM" type="number" value="25" min="1" step="0.5">
+              <input id="simHeightSlider" type="range" min="3" max="100" step="0.5" value="25" style="margin-top:6px">
             </div>
           </div>
           <label class="pill-toggle">
@@ -377,6 +453,111 @@
           <label class="lbl-row" style="margin-top:10px">上下位置(mm)<span id="simWoodZVal">20</span></label>
           <input id="simWoodZ" type="range" min="-50" max="50" step="1" value="20">
         </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<main id="page-paper" class="page">
+  <section>
+    <h2>紙品列印</h2>
+    <p class="hint">列印出貨標籤貼紙、祝賀卡等紙本物件,版面尺寸已依公司樣板 PDF(<b>出貨標籤.pdf</b> 100×150mm、<b>祝賀卡.pdf</b> 150×100mm)設定好。按「列印」開啟瀏覽器列印視窗,印表機請選擇<b>「實際大小 / 100%」</b>(不要用「符合頁面」縮放),也可以在列印視窗選「另存為 PDF」直接輸出檔案。如果列印出來還有多印日期、網址、頁碼等文字,到列印視窗展開<b>「更多設定」</b>,把<b>「頁首及頁尾」</b>取消勾選即可(這是瀏覽器自己加的,不是版面裡的文字)。</p>
+    <div class="chiprow" id="paperModeChips">
+      <button class="btn-sm active" data-mode="label">標籤列</button>
+      <button class="btn-sm" data-mode="card">祝賀卡</button>
+    </div>
+
+    <div class="paper-layout" style="margin-top:16px">
+      <div class="paper-panel">
+        <div id="paperPanelLabel">
+          <div class="blk">
+            <label>標籤文字(每一行都印這段文字)</label>
+            <input id="labelText" type="text" value="黑面琵鷺-40　封條" placeholder="要印在每一行的文字">
+          </div>
+          <div class="blk">
+            <label>行數</label>
+            <input id="labelRows" type="number" min="1" max="40" value="10">
+          </div>
+          <div class="blk">
+            <label>字級(mm)</label>
+            <div class="sizerow">
+              <input id="labelFontSize" type="number" min="2" max="30" step="0.5" value="10" disabled>
+              <span class="u">mm</span>
+            </div>
+            <label class="pill-toggle" style="margin-top:8px">
+              <input type="checkbox" id="labelAutoSize" checked>
+              <span class="track"></span>
+              <span class="lbl">自動調整大小(依行數與文字長度,避免超出邊界)</span>
+            </label>
+          </div>
+        </div>
+
+        <div id="paperPanelCard" style="display:none">
+          <div class="blk">
+            <label>頂端小字(可留空、可改詞)</label>
+            <div class="sizerow">
+              <input id="cardPrefix" type="text" value="祝" placeholder="例如:祝">
+              <input id="cardPrefixSize" type="number" value="8" min="2" max="20" step="0.5">
+              <span class="u">mm</span>
+            </div>
+          </div>
+          <div class="blk">
+            <label>祝賀對象</label>
+            <div class="sizerow">
+              <input id="cardTo" type="text" value="泥研製所" placeholder="例如:Woman studio">
+              <input id="cardToSize" type="number" value="10" min="2" max="30" step="0.5">
+              <span class="u">mm</span>
+            </div>
+          </div>
+          <div class="blk">
+            <label class="lbl-row">頂端上下位置(離頂邊多遠)<span id="cardTopPosVal">8mm</span></label>
+            <input id="cardTopPos" type="range" min="4" max="30" step="0.5" value="8">
+          </div>
+          <div class="blk">
+            <label>中間祝賀語(可分行、置中放大)</label>
+            <textarea id="cardMsg" rows="2">開幕誌慶</textarea>
+            <div class="sizerow" style="margin-top:6px">
+              <span class="u" style="flex:1 1 auto">字級</span>
+              <input id="cardMsgSize" type="number" value="30" min="4" max="45" step="0.5">
+              <span class="u">mm</span>
+            </div>
+          </div>
+          <div class="blk">
+            <label>落款(署名)</label>
+            <div class="sizerow">
+              <input id="cardFrom" type="text" value="拿破崙" placeholder="例如:苡僑">
+              <input id="cardFromSize" type="number" value="8" min="2" max="30" step="0.5">
+              <span class="u">mm</span>
+            </div>
+          </div>
+          <div class="blk">
+            <label>落款小字(可留空、可改詞)</label>
+            <div class="sizerow">
+              <input id="cardSuffix" type="text" value="敬賀" placeholder="例如:敬賀">
+              <input id="cardSuffixSize" type="number" value="6" min="2" max="20" step="0.5">
+              <span class="u">mm</span>
+            </div>
+          </div>
+          <div class="blk">
+            <label class="lbl-row">落款上下位置(離底邊多遠)<span id="cardBottomPosVal">11mm</span></label>
+            <input id="cardBottomPos" type="range" min="4" max="30" step="0.5" value="11">
+          </div>
+          <div class="blk">
+            <label class="pill-toggle">
+              <input type="checkbox" id="cardShowBg" checked>
+              <span class="track"></span>
+              <span class="lbl">預覽墊底色紙(賀卡色紙.png)</span>
+            </label>
+            <p class="hint" style="margin:6px 0 0">只在螢幕預覽時墊底參考,實際紙張本身就已印好底色,<b>列印/另存 PDF 不會輸出這張底圖</b>。</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="paper-preview-wrap">
+        <div class="paper-preview-scroll">
+          <div id="paperSheet" class="paper-sheet label-size"></div>
+        </div>
+        <button class="btn" style="margin-top:14px" onclick="printPaper()">🖨 列印</button>
       </div>
     </div>
   </section>
@@ -417,6 +598,59 @@ const FONT_FACE_SRC = {
   CHENYU: {family:"ChenYuluoyan", weight:300, format:"truetype"},
   WANWAN: {family:"AaWanWan", weight:400, format:"truetype"},
 };
+
+/* ── 數字輸入的加減按鈕(全站取代原生 <input type=number> 的小箭頭) ──
+   用法:numStepper(inputEl) 回傳一個包住原本 input 的 <span class="numstep">,
+   把回傳值放到原本要放 input 的地方即可;若 input 已經插進 DOM,也可以直接
+   呼叫 numStepper(existingInput),函式會自動把它原地換成加了按鈕的版本。
+   按鈕會改 input.value 後 dispatch 一個 "input" 事件,原本掛在 input 上的
+   change/input 監聽都不用改,一樣會照原邏輯觸發。 */
+function numStepper(input){
+  const wrap = document.createElement("span");
+  wrap.className = "numstep";
+  const minus = document.createElement("button");
+  minus.type = "button"; minus.className = "numstep-btn minus"; minus.textContent = "−"; minus.tabIndex = -1;
+  const plus = document.createElement("button");
+  plus.type = "button"; plus.className = "numstep-btn plus"; plus.textContent = "+"; plus.tabIndex = -1;
+
+  const decimals = () => {
+    const s = String(input.step || "1");
+    const i = s.indexOf(".");
+    return i < 0 ? 0 : (s.length - i - 1);
+  };
+  const bump = dir => {
+    if (input.disabled) return;
+    const step = parseFloat(input.step) || 1;
+    const cur = parseFloat(input.value);
+    let next = (isFinite(cur) ? cur : 0) + dir * step;
+    if (input.min !== "" && isFinite(parseFloat(input.min))) next = Math.max(parseFloat(input.min), next);
+    if (input.max !== "" && isFinite(parseFloat(input.max))) next = Math.min(parseFloat(input.max), next);
+    const p = Math.pow(10, decimals());
+    input.value = Math.round(next * p) / p;
+    input.dispatchEvent(new Event("input", {bubbles:true}));
+    input.dispatchEvent(new Event("change", {bubbles:true}));
+  };
+  let holdTimeout = null, holdInterval = null;
+  const stopHold = () => { clearTimeout(holdTimeout); clearInterval(holdInterval); holdTimeout = holdInterval = null; };
+  const startHold = dir => {
+    bump(dir);
+    stopHold();
+    holdTimeout = setTimeout(() => { holdInterval = setInterval(() => bump(dir), 90); }, 420);
+  };
+  [[minus, -1], [plus, 1]].forEach(([btn, dir]) => {
+    btn.addEventListener("mousedown", e => { e.preventDefault(); startHold(dir); });
+    btn.addEventListener("touchstart", e => { e.preventDefault(); startHold(dir); }, {passive:false});
+    btn.addEventListener("click", e => e.stopPropagation());
+  });
+  ["mouseup","mouseleave","touchend","touchcancel"].forEach(ev => {
+    minus.addEventListener(ev, stopHold);
+    plus.addEventListener(ev, stopHold);
+  });
+
+  if (input.parentNode) input.parentNode.insertBefore(wrap, input);
+  wrap.append(minus, input, plus);
+  return wrap;
+}
 
 /* ── 辦公室款(胖胖招財招福貓)樣板 ─────────────────────────────────────────
    這類商品不是「圖案＋分隔線＋文字」的組合,而是直接用資料夾裡的整張樣板
@@ -1221,7 +1455,7 @@ function renderLibrary(){
       const v = Number(sizeInput.value) || settings.iconSize;
       iconSizes[name] = v; saveIconSizes(); render();
     });
-    sizeCol.append(sizeLab, sizeInput);
+    sizeCol.append(sizeLab, numStepper(sizeInput));
 
     const gapCol = document.createElement("div");
     gapCol.className = "size-col";
@@ -1233,7 +1467,7 @@ function renderLibrary(){
       const v = Number(gapInput.value) || 0;
       iconGaps[name] = v; saveIconGaps(); render();
     });
-    gapCol.append(gapLab, gapInput);
+    gapCol.append(gapLab, numStepper(gapInput));
 
     sizeRow.append(sizeCol, gapCol);
     const del = document.createElement("button");
@@ -1353,7 +1587,7 @@ function renderSettings(){
       inp.value = settings.bgTransparent ? "1" : "0";
       inp.addEventListener("change", () => { settings.bgTransparent = inp.value === "1"; saveSet(); render(); });
     }
-    wrap.append(lab, inp);
+    wrap.append(lab, f.type === "num" ? numStepper(inp) : inp);
     grid.appendChild(wrap);
   });
 }
@@ -1495,7 +1729,9 @@ function render(){
           if (title) inp.title = title;
           inp.addEventListener("click", e => e.stopPropagation());
           inp.addEventListener("change", () => { onCommit(inp.value); render(); });
-          wrap.append(l, inp);
+          const stepper = numStepper(inp);
+          stepper.addEventListener("click", e => e.stopPropagation());
+          wrap.append(l, stepper);
           return wrap;
         };
         posRow.append(
@@ -1554,6 +1790,7 @@ document.querySelectorAll(".ptab").forEach(btn => {
     const page = btn.dataset.page;
     document.getElementById("page-generate").classList.toggle("show", page === "generate");
     document.getElementById("page-simulate").classList.toggle("show", page === "simulate");
+    document.getElementById("page-paper").classList.toggle("show", page === "paper");
     if (page === "simulate"){
       initSim();
       requestAnimationFrame(resizeSimRenderer);
@@ -1561,6 +1798,7 @@ document.querySelectorAll(".ptab").forEach(btn => {
     } else {
       stopSimLoop();
     }
+    if (page === "paper") renderPaperPreview();
   });
 });
 
@@ -2077,11 +2315,151 @@ document.getElementById("simWoodDiameter").addEventListener("input", () => {
   applyWoodDiameter();
 });
 
+/* ══════════════ 紙品列印(標籤列 / 祝賀卡) ══════════════
+   版面尺寸直接用 CSS mm 單位畫,螢幕預覽跟實際列印比例一致,不需要另外換算縮放。
+   標籤列樣板 100×150mm(出貨標籤.pdf)、祝賀卡樣板 150×100mm(祝賀卡.pdf)。 */
+let paperMode = "label"; // "label" | "card"
+
+function escapeHtml(s){
+  return String(s ?? "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+}
+
+/* 標籤列的「自動大小」:同時看行數(垂直,高度愈矮字愈小)跟文字長度(水平,
+   字太多就縮小避免超出 100mm 寬度)兩個限制,取兩者中比較小的字級。
+   用跟刻印文字量測相同的 canvas 方式(measureTextMetrics)量寬度,單位不用換算成 px,
+   因為只取寬度的比例關係(字級 100 量出來的寬度 : 要塞進去的寬度)。 */
+function autoLabelFontMM(text, rows){
+  const rowHeightMM = 150 / rows;
+  const heightCapMM = Math.max(3, Math.min(22, rowHeightMM * 0.6));
+  if (!text) return Math.round(heightCapMM * 10) / 10;
+  const padMM = 8; // .lr 左右各 padding 4mm
+  const usableWidthMM = 100 - padMM;
+  const ref = 100;
+  const m = measureTextMetrics(text, "'PingFang TC','Microsoft JhengHei',sans-serif", 900, ref, 0);
+  const widthCapMM = m.width > 0 ? (usableWidthMM * ref / m.width) : heightCapMM;
+  const fontMM = Math.max(3, Math.min(22, Math.min(heightCapMM, widthCapMM)));
+  return Math.round(fontMM * 10) / 10;
+}
+
+function renderPaperPreview(){
+  const sheet = document.getElementById("paperSheet");
+  if (!sheet) return;
+  if (paperMode === "label"){
+    sheet.className = "paper-sheet label-size";
+    const text = document.getElementById("labelText").value || "";
+    let rows = parseInt(document.getElementById("labelRows").value, 10);
+    if (!rows || rows < 1) rows = 1;
+    if (rows > 40) rows = 40;
+    document.getElementById("labelRows").value = rows;
+
+    const sizeInput = document.getElementById("labelFontSize");
+    const autoOn = document.getElementById("labelAutoSize").checked;
+    let fontMM;
+    if (autoOn){
+      fontMM = autoLabelFontMM(text, rows);
+      sizeInput.value = fontMM;
+      sizeInput.disabled = true;
+    } else {
+      sizeInput.disabled = false;
+      fontMM = mmVal("labelFontSize", 10);
+    }
+    const sizeWrap = sizeInput.closest(".numstep");
+    if (sizeWrap) sizeWrap.querySelectorAll(".numstep-btn").forEach(b => { b.disabled = sizeInput.disabled; });
+
+    let html = '<div class="label-row-list">';
+    for (let i = 0; i < rows; i++){
+      html += `<div class="lr" style="font-size:${fontMM}mm">${escapeHtml(text)}</div>`;
+    }
+    html += '</div>';
+    sheet.innerHTML = html;
+  } else {
+    sheet.className = "paper-sheet card-size";
+    const prefix = document.getElementById("cardPrefix").value || "";
+    const to = document.getElementById("cardTo").value || "";
+    const msg = document.getElementById("cardMsg").value || "";
+    const from = document.getElementById("cardFrom").value || "";
+    const suffix = document.getElementById("cardSuffix").value || "";
+    const prefixSize = mmVal("cardPrefixSize", 8);
+    const toSize = mmVal("cardToSize", 10);
+    const msgSize = mmVal("cardMsgSize", 30);
+    const fromSize = mmVal("cardFromSize", 8);
+    const suffixSize = mmVal("cardSuffixSize", 6);
+    const pfxHtml = prefix ? `<span class="pfx" style="font-size:${prefixSize}mm">${escapeHtml(prefix)}</span>` : "";
+    const toHtml = to ? `<span class="to" style="font-size:${toSize}mm">${escapeHtml(to)}</span>` : "";
+    const fromHtml = from ? `<span class="from" style="font-size:${fromSize}mm">${escapeHtml(from)}</span>` : "";
+    const sfxHtml = suffix ? `<span class="sfx" style="font-size:${suffixSize}mm">${escapeHtml(suffix)}</span>` : "";
+    const showBg = document.getElementById("cardShowBg").checked;
+    const bgHtml = (showBg && typeof CARD_BG_DATAURL === "string")
+      ? `<img class="paper-bg" src="${CARD_BG_DATAURL}" alt="">` : "";
+    const topPos = mmVal("cardTopPos", 8);
+    const bottomPos = mmVal("cardBottomPos", 11);
+    document.getElementById("cardTopPosVal").textContent = topPos + "mm";
+    document.getElementById("cardBottomPosVal").textContent = bottomPos + "mm";
+    sheet.innerHTML = `
+      ${bgHtml}
+      <div class="card-sheet" style="padding:${topPos}mm 10mm ${bottomPos}mm">
+        <div class="card-top">${pfxHtml}${toHtml}</div>
+        <div class="card-mid" style="font-size:${msgSize}mm">${escapeHtml(msg)}</div>
+        <div class="card-bottom">${fromHtml}${sfxHtml}</div>
+      </div>`;
+  }
+}
+
+function mmVal(id, fallback){
+  const n = parseFloat(document.getElementById(id).value);
+  return (isFinite(n) && n > 0) ? n : fallback;
+}
+
+function switchPaperMode(mode){
+  paperMode = mode;
+  document.getElementById("paperModeChips").querySelectorAll(".btn-sm").forEach(b => {
+    b.classList.toggle("active", b.dataset.mode === mode);
+  });
+  document.getElementById("paperPanelLabel").style.display = mode === "label" ? "" : "none";
+  document.getElementById("paperPanelCard").style.display = mode === "card" ? "" : "none";
+  document.getElementById("paperPageSize").textContent =
+    mode === "label" ? "@page{size:100mm 150mm;margin:0}" : "@page{size:150mm 100mm;margin:0}";
+  renderPaperPreview();
+}
+
+function printPaper(){
+  renderPaperPreview();
+  const root = document.getElementById("printRoot");
+  root.innerHTML = "";
+  const clone = document.getElementById("paperSheet").cloneNode(true);
+  clone.removeAttribute("id");
+  root.appendChild(clone);
+  window.print();
+}
+
+document.getElementById("paperModeChips").querySelectorAll(".btn-sm").forEach(btn => {
+  btn.addEventListener("click", () => switchPaperMode(btn.dataset.mode));
+});
+["labelText","labelRows"].forEach(id => {
+  document.getElementById(id).addEventListener("input", renderPaperPreview);
+});
+document.getElementById("labelAutoSize").addEventListener("change", renderPaperPreview);
+document.getElementById("labelFontSize").addEventListener("input", () => {
+  // 使用者直接改字級數字(或按加減鈕)就視為手動調整,自動關掉「自動調整大小」
+  document.getElementById("labelAutoSize").checked = false;
+  renderPaperPreview();
+});
+["cardPrefix","cardPrefixSize","cardTo","cardToSize","cardTopPos","cardMsg","cardMsgSize",
+ "cardFrom","cardFromSize","cardSuffix","cardSuffixSize","cardBottomPos"].forEach(id => {
+  document.getElementById(id).addEventListener("input", renderPaperPreview);
+});
+document.getElementById("cardShowBg").addEventListener("change", renderPaperPreview);
+
 /* ── 初始化 ── */
+// 頁面裡寫死的 <input type="number">(動態產生的已各自在建立時包好),統一換成加減按鈕版本
+document.querySelectorAll('input[type="number"]').forEach(inp => {
+  if (!inp.closest(".numstep")) numStepper(inp);
+});
 renderLibrary();
 renderSettings();
 renderFontStatus();
 render();
+renderPaperPreview();
 /* 文字的位置與大小是用 canvas 量出來的,字體還沒載入時量到的是替代字體、版面會跑掉,
    所以先把打包的字體真的載進瀏覽器,載完再重畫一次。 */
 if (document.fonts && document.fonts.load){
