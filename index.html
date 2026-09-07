@@ -196,7 +196,7 @@
   .label-row-list{position:absolute;inset:0;display:flex;flex-direction:column}
   .label-row-list .lr{flex:1;display:flex;align-items:center;justify-content:center;
     font-family:'PingFang TC','Microsoft JhengHei',sans-serif;font-weight:900;color:#111;
-    border-bottom:1px dashed #ccc;white-space:nowrap;overflow:hidden;padding:0 4mm}
+    border-bottom:2px dashed #000;white-space:pre;overflow:hidden;padding:0 4mm}
   .label-row-list .lr:last-child{border-bottom:none}
   /* 賀卡色紙底圖:只是預覽時墊在下面看效果用(實際紙張本身就已印好底色),
      列印/另存 PDF 時一定要排除,不然會把底圖也印上去,跟色紙疊兩層。 */
@@ -461,7 +461,7 @@
 <main id="page-paper" class="page">
   <section>
     <h2>紙品列印</h2>
-    <p class="hint">列印出貨標籤貼紙、祝賀卡等紙本物件,版面尺寸已依公司樣板 PDF(<b>出貨標籤.pdf</b> 100×150mm、<b>祝賀卡.pdf</b> 150×100mm)設定好。按「列印」開啟瀏覽器列印視窗,印表機請選擇<b>「實際大小 / 100%」</b>(不要用「符合頁面」縮放),也可以在列印視窗選「另存為 PDF」直接輸出檔案。如果列印出來還有多印日期、網址、頁碼等文字,到列印視窗展開<b>「更多設定」</b>,把<b>「頁首及頁尾」</b>取消勾選即可(這是瀏覽器自己加的,不是版面裡的文字)。</p>
+    <p class="hint">列印出貨標籤貼紙、祝賀卡等紙本物件,版面尺寸已依公司樣板 PDF(<b>出貨標籤.pdf</b> 100×150mm、<b>祝賀卡.pdf</b> 150×100mm)設定好。按「列印」開啟瀏覽器列印視窗,印表機請選擇<b>「實際大小 / 100%」</b>(不要用「符合頁面」縮放),也可以在列印視窗選「另存為 PDF」直接輸出檔案。如果列印出來還有多印日期、網址、頁碼等文字,到列印視窗展開<b>「更多設定」</b>,把<b>「頁首及頁尾」</b>取消勾選即可(這是瀏覽器自己加的,不是版面裡的文字)。標籤列之間的裁切虛線如果沒印出來,請確認列印視窗的<b>「背景圖形」</b>選項有勾選。</p>
     <div class="chiprow" id="paperModeChips">
       <button class="btn-sm active" data-mode="label">標籤列</button>
       <button class="btn-sm" data-mode="card">祝賀卡</button>
@@ -2327,15 +2327,18 @@ function escapeHtml(s){
 /* 標籤列的「自動大小」:同時看行數(垂直,高度愈矮字愈小)跟文字長度(水平,
    字太多就縮小避免超出 100mm 寬度)兩個限制,取兩者中比較小的字級。
    用跟刻印文字量測相同的 canvas 方式(measureTextMetrics)量寬度,單位不用換算成 px,
-   因為只取寬度的比例關係(字級 100 量出來的寬度 : 要塞進去的寬度)。 */
+   因為只取寬度的比例關係(字級 100 量出來的寬度 : 要塞進去的寬度)。
+   .lr 用 white-space:pre,使用者打幾個空白就照樣印出幾個空白(方便手動對齊、留間距),
+   所以這裡直接量原始字串,不摺疊空白,量出來的寬度才會跟實際印出來的一致。 */
 function autoLabelFontMM(text, rows){
   const rowHeightMM = 150 / rows;
   const heightCapMM = Math.max(3, Math.min(22, rowHeightMM * 0.6));
-  if (!text) return Math.round(heightCapMM * 10) / 10;
+  const t = text;
+  if (!t) return Math.round(heightCapMM * 10) / 10;
   const padMM = 8; // .lr 左右各 padding 4mm
   const usableWidthMM = 100 - padMM;
   const ref = 100;
-  const m = measureTextMetrics(text, "'PingFang TC','Microsoft JhengHei',sans-serif", 900, ref, 0);
+  const m = measureTextMetrics(t, "'PingFang TC','Microsoft JhengHei',sans-serif", 900, ref, 0);
   const widthCapMM = m.width > 0 ? (usableWidthMM * ref / m.width) : heightCapMM;
   const fontMM = Math.max(3, Math.min(22, Math.min(heightCapMM, widthCapMM)));
   return Math.round(fontMM * 10) / 10;
