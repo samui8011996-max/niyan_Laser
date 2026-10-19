@@ -67,7 +67,7 @@ for fn, cols, rows, names, kind in SRC:
 # 卡面 90x54mm 不變,中間內容(符號+字)整體縮成寬 40mm 置中:卡大字小比較好看,
 # 雷雕機框選範圍也就是整張卡片(畫布),對位比較好對。
 FRONT_W = 400   # 單位 = 0.1mm:正面 40mm(符號+客人文字+底線+英文祝賀語)
-BACK_W = 400    # 背面 40mm(Scent 那行字很小,先不再縮)
+BACK_W = 550    # 背面 55mm(中文字+Scent 要大一點才刻得清楚)
 # uniform scale per side so type sizes match across all 12 cards (card = 900x540 units, 10 units per mm)
 out = {}
 for kind, (mw, mh) in {'front': (FRONT_W, 300), 'back': (BACK_W, 300)}.items():
