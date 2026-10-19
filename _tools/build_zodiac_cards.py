@@ -66,8 +66,9 @@ for fn, cols, rows, names, kind in SRC:
             cards.setdefault(z, {})[kind] = {'box': d['box'], 'inner': inner, 'slot': d['slot']}
 # 卡面 90x54mm 不變,中間內容(符號+字)整體縮成寬 40mm 置中:卡大字小比較好看,
 # 雷雕機框選範圍也就是整張卡片(畫布),對位比較好對。
-FRONT_W = 400   # 單位 = 0.1mm:正面 40mm(符號+客人文字+底線+英文祝賀語)
+FRONT_W = 450   # 單位 = 0.1mm:正面 45mm(符號+客人文字+底線+英文祝賀語)
 BACK_W = 550    # 背面 55mm(中文字+Scent 要大一點才刻得清楚)
+BOLD_MM = 0.15   # 粗體:每條筆畫外擴的總粗度(mm),網站預設開啟,可在卡片上取消
 # uniform scale per side so type sizes match across all 12 cards (card = 900x540 units, 10 units per mm)
 out = {}
 for kind, (mw, mh) in {'front': (FRONT_W, 300), 'back': (BACK_W, 300)}.items():
@@ -76,7 +77,7 @@ for kind, (mw, mh) in {'front': (FRONT_W, 300), 'back': (BACK_W, 300)}.items():
     for z, c in cards.items():
         b = c[kind]['box']; cx, cy = (b[0]+b[2])/2, (b[1]+b[3])/2
         g = 'translate(450 270) scale(%.5f) translate(%.2f %.2f)' % (k, -cx, -cy)
-        rec = {'g': g, 'inner': re.sub(r'\s*\n\s*', '', c[kind]['inner'])}
+        rec = {'g': g, 'inner': re.sub(r'\s*\n\s*', '', c[kind]['inner']), 'stroke': round(BOLD_MM*10/k, 2)}
         if c[kind]['slot']:
             sl = c[kind]['slot']; rec['name'] = {kk: round(v, 2) for kk, v in sl.items()}
         out.setdefault(z, {})[kind] = rec

@@ -837,7 +837,9 @@ function buildCardSvg(order, side, s){
   const font = order.fontOverride != null
     ? (FONT_OPTIONS[order.fontOverride] || FONT_OPTIONS[0])
     : (FONT_OPTIONS.find(f => f.key === CARD_FONT_KEY) || FONT_OPTIONS[0]);
-  const weight = order.boldOverride ? Math.min(900, (font.weight||400) + 300) : font.weight;
+  /* 粗體(預設開):對整張卡(符號、底線、祝賀語、客人文字)加同色描邊,每條筆畫變粗,不靠字型的 faux bold */
+  const bold = order.boldOverride != null ? order.boldOverride : true;
+  const weight = font.weight;
   let style = "", text = "", textSize = null;
   if (side === "front" && order.text && rec.name){
     const nm = rec.name;
@@ -866,7 +868,7 @@ function buildCardSvg(order, side, s){
      不是整張 90×54 畫布;白底讓框=整張卡,對位好對(白色不會被雷雕)。 */
   const bg = '<rect width="900" height="540" fill="#ffffff"/>';
   const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="'+CARD_PX.w+'" height="'+CARD_PX.h+'" viewBox="0 0 900 540">'
-            + style + bg + '<g transform="'+rec.g+'">'+rec.inner+text+'</g></svg>';
+            + style + bg + '<g transform="'+rec.g+'"'+(bold && rec.stroke ? ' stroke="'+INK+'" stroke-width="'+rec.stroke+'" stroke-linejoin="round"' : '')+'>'+rec.inner+text+'</g></svg>';
   return {svg, w:CARD_PX.w, h:CARD_PX.h, textSize, font};
 }
 
@@ -1170,7 +1172,7 @@ function renderTspans(lines, x, firstBaselineY, lineHeight){
 
 /* 辦公室款(AaWanWan)預設就用粗體,因為原字重刻在木片/公仔上偏細,不容易看清楚。
    其他款式維持原字重不變。order.boldOverride 有明確設就照設定,沒設才套這個預設。 */
-function defaultBold(order){ return !!templateNameFor(order); }
+function defaultBold(order){ return order.fnCategory === "星座小卡" || !!templateNameFor(order); }
 function effectiveWeight(order, font){
   const bold = order.boldOverride != null ? order.boldOverride : defaultBold(order);
   return bold ? Math.min(900, (font.weight||400) + 300) : font.weight;
