@@ -862,7 +862,9 @@ function buildCardSvg(order, side, s){
     text = '<text text-anchor="middle" font-size="'+size+'" font-weight="'+weight+'" font-family="'
          + font.value.replace(/"/g,"'")+'" fill="'+INK+'">'+renderTspans(lines, x, y, mm.lineHeight)+'</text>';
   }
-  const bg = s.bgTransparent ? "" : '<rect width="900" height="540" fill="#ffffff"/>';
+  /* 小卡背景一律不透明白:雷雕軟體(xTool)匯入圖片會把透明邊裁掉,選取框就只包住內容、
+     不是整張 90×54 畫布;白底讓框=整張卡,對位好對(白色不會被雷雕)。 */
+  const bg = '<rect width="900" height="540" fill="#ffffff"/>';
   const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="'+CARD_PX.w+'" height="'+CARD_PX.h+'" viewBox="0 0 900 540">'
             + style + bg + '<g transform="'+rec.g+'">'+rec.inner+text+'</g></svg>';
   return {svg, w:CARD_PX.w, h:CARD_PX.h, textSize, font};
