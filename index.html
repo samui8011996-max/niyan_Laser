@@ -21,6 +21,7 @@
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/geometries/DecalGeometry.js"></script>
 <script src="default-library.js"></script>
 <script src="default-templates.js"></script>
+<script src="default-zodiac-cards.js"></script>
 <script src="default-fonts.js"></script>
 <script src="default-font-mobo.js"></script>
 <script src="default-font-jf.js"></script>
@@ -618,7 +619,13 @@ function numStepper(input){
     const i = s.indexOf(".");
     return i < 0 ? 0 : (s.length - i - 1);
   };
-  const bump = dir => {
+  /* commit=false 只更新顯示的數字(dispatch "input"),不觸發 "change"。
+     有些欄位(例如生成結果卡片的字體大小/位置)掛在 "change" 上做的是整頁重繪,
+     按著加減鈕連續跳動時如果每 90ms 都真的送出 "change",等於每 90ms 就重繪一次
+     全部卡片,會非常卡。所以按住連續加減時只送 "input"(畫面數字照樣即時跳動),
+     放開按鈕那一刻才真正送一次 "change" 去套用,單純點一下(未觸發連續模式)則
+     維持原本「點一下就立刻套用」的行為不受影響。 */
+  const bump = (dir, commit) => {
     if (input.disabled) return;
     const step = parseFloat(input.step) || 1;
     const cur = parseFloat(input.value);
@@ -628,14 +635,20 @@ function numStepper(input){
     const p = Math.pow(10, decimals());
     input.value = Math.round(next * p) / p;
     input.dispatchEvent(new Event("input", {bubbles:true}));
-    input.dispatchEvent(new Event("change", {bubbles:true}));
+    if (commit) input.dispatchEvent(new Event("change", {bubbles:true}));
   };
-  let holdTimeout = null, holdInterval = null;
-  const stopHold = () => { clearTimeout(holdTimeout); clearInterval(holdInterval); holdTimeout = holdInterval = null; };
+  let holdTimeout = null, holdInterval = null, holding = false;
+  const stopHold = () => {
+    clearTimeout(holdTimeout); clearInterval(holdInterval); holdTimeout = holdInterval = null;
+    if (holding){ holding = false; input.dispatchEvent(new Event("change", {bubbles:true})); }
+  };
   const startHold = dir => {
-    bump(dir);
-    stopHold();
-    holdTimeout = setTimeout(() => { holdInterval = setInterval(() => bump(dir), 90); }, 420);
+    bump(dir, true);
+    holding = false;
+    holdTimeout = setTimeout(() => {
+      holding = true;
+      holdInterval = setInterval(() => bump(dir, false), 90);
+    }, 420);
   };
   [[minus, -1], [plus, 1]].forEach(([btn, dir]) => {
     btn.addEventListener("mousedown", e => { e.preventDefault(); startHold(dir); });
@@ -792,8 +805,71 @@ const FILENAME_RULES = {
   "招福貓對":   {tag: (o,size) => "一對"+size, fields: o => [o.color, o.zodiac, o.text]},
   "胖胖招財貓": {tag: (o,size) => (o.text ? "雷雕" : "木片")+size, fields: o => [o.text, o.color]},
   "星座貓雷雕": {tag: (o,size) => "星座貓雷雕"+size, fields: o => [o.color, o.zodiac, o.text]},
+  "星座小卡":   {tag: () => "星座小卡", fields: o => [o.zodiac, o.text]},
 };
+/* ── 星座小卡(星座胖胖貓×永生花玻璃球附贈的 90×54mm 雙面雷雕小卡) ──────────────
+   正面:星座符號＋客人刻印文字(英文名字或生日,限 10 字)＋底線＋英文祝賀語
+   背面:星座名＋中文祝賀語＋Scent 香氣(每個星座固定,不隨訂單變動)
+   素材在 default-zodiac-cards.js(由 _tools/build_zodiac_cards.py 從 12ZODIC 資料夾產生),
+   座標系統 900×540(10 單位=1mm)。每筆訂單會生成「正面」「背面」兩張結果。 */
+const CARD_PRODUCT_KEYWORD = "玻璃球";
+const CARD_FONT_KEY = "CHENYU";      // 正面客人文字用手寫細字,跟原稿 Elena 的筆觸最接近
+const CARD_MAX_CHARS = 10;
+const CARD_PX = {w:340.16, h:204.09}; // 90×54mm 以 96dpi 換算的像素
+const ZODIAC_ALIAS = {"摩羯座":"魔羯座","白羊座":"牡羊座","天平座":"天秤座"};
+function isCardProduct(rowText){ return String(rowText||"").includes(CARD_PRODUCT_KEYWORD); }
+function cardZodiacKey(o){
+  if (typeof ZODIAC_CARDS === "undefined") return "";
+  /* 星座欄位優先;沒有就從「刻印圖案: 天秤座x玫瑰天竺葵」前半段抓 */
+  const cands = [o.zodiac, (String(o.pattern||"").match(/([^\sxX×]+座)/)||[])[1]];
+  for (const c of cands){
+    if (!c) continue;
+    const k = ZODIAC_ALIAS[c] || c;
+    if (ZODIAC_CARDS[k]) return k;
+  }
+  return "";
+}
+const CARD_SIDE_LABEL = {front:"正面", back:"背面"};
+function buildCardSvg(order, side, s){
+  const key = cardZodiacKey(order);
+  const rec = key && ZODIAC_CARDS[key] && ZODIAC_CARDS[key][side];
+  if (!rec) return null;
+  const font = order.fontOverride != null
+    ? (FONT_OPTIONS[order.fontOverride] || FONT_OPTIONS[0])
+    : (FONT_OPTIONS.find(f => f.key === CARD_FONT_KEY) || FONT_OPTIONS[0]);
+  const weight = order.boldOverride ? Math.min(900, (font.weight||400) + 300) : font.weight;
+  let style = "", text = "", textSize = null;
+  if (side === "front" && order.text && rec.name){
+    const nm = rec.name;
+    const lines = splitLines(order.text);
+    /* 字級先讓大寫字高≈原稿 Elena 的字高,太寬才縮到底線寬度的 90% 以內 */
+    const REF = 100;
+    const cap = measureTextMetrics("E", font.value, weight, REF, 0).ascent / REF || 0.7;
+    let size = order.fontSizeOverride > 0 ? order.fontSizeOverride : nm.h / cap;
+    if (!(order.fontSizeOverride > 0)){
+      const w = measureLines(lines, font.value, weight, size, 0).maxWidth;
+      if (w > nm.maxW) size *= nm.maxW / w;
+    }
+    textSize = size;
+    const mm = measureLines(lines, font.value, weight, size, 0);
+    /* 單行:基線貼齊原稿名字的底;多行:整塊以原名字位置為中心 */
+    const firstBaseline = lines.length > 1
+      ? nm.cy - mm.totalHeight/2 + mm.firstAscent
+      : nm.bottom;
+    const x = nm.cx + (order.offsetX || 0);
+    const y = firstBaseline - (order.offsetY || 0);
+    style = fontFaceStyle(font.key);
+    text = '<text text-anchor="middle" font-size="'+size+'" font-weight="'+weight+'" font-family="'
+         + font.value.replace(/"/g,"'")+'" fill="'+INK+'">'+renderTspans(lines, x, y, mm.lineHeight)+'</text>';
+  }
+  const bg = s.bgTransparent ? "" : '<rect width="900" height="540" fill="#ffffff"/>';
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="'+CARD_PX.w+'" height="'+CARD_PX.h+'" viewBox="0 0 900 540">'
+            + style + bg + '<g transform="'+rec.g+'">'+rec.inner+text+'</g></svg>';
+  return {svg, w:CARD_PX.w, h:CARD_PX.h, textSize, font};
+}
+
 function fnCategoryFor(rowText, templateKey, parsed){
+  if (isCardProduct(rowText) && cardZodiacKey(parsed)) return "星座小卡";
   if (templateKey === "辦公室一對" || templateKey === "辦公室單隻") return templateKey;
   if (rowText.includes("胖胖貓") && rowText.includes("一對")) return "招福貓對";
   if (rowText.includes("胖胖招財貓") && !rowText.includes("招福")) return "胖胖招財貓";
@@ -858,6 +934,8 @@ function rowsToOrders(rows){
     /* 辦公室系列(整張樣板)如果連圖案跟文字都沒填,只有顏色,代表客人還沒決定
        要刻什麼,刻出來會是一張空白貓,沒有意義,直接不產生這一筆結果。 */
     if (item && !parsed.text && !parsed.pattern) return;
+    /* 小卡訂單常只有「刻印圖案: 天秤座x玫瑰天竺葵」沒有獨立星座欄位,補上星座讓檔名跟卡片顯示用得到 */
+    if (isCardProduct(rowText) && !parsed.zodiac) parsed.zodiac = cardZodiacKey(parsed);
     const fnCategory = fnCategoryFor(rowText, item ? item.key : "", parsed);
     out.push({id:i+"-"+(orderId||parsed.text), name:name.trim(), orderId:orderId.trim(), date,
               template: item ? item.key : "", fnCategory, fnSize: sizeTagFromText(rowText), ...parsed});
@@ -1235,6 +1313,9 @@ function fileNameFor(o){
   return sanitizeFilename(base+"_"+(o.text||o.zodiac||"圖案"));
 }
 
+/* 小卡一筆訂單有正反兩張,檔名後面接「_正面/_背面」避免互相覆蓋 */
+function dlNameFor(r){ return fileNameFor(r.order) + (r.cardSide ? "_"+CARD_SIDE_LABEL[r.cardSide] : ""); }
+
 function downloadBlob(blob, filename){
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
@@ -1286,7 +1367,7 @@ async function downloadAll(){
   const rs = currentResults();
   for (let i = 0; i < rs.length; i++){
     const r = rs[i];
-    await downloadFlatSvg(r.svg, fileNameFor(r.order), r.w, r.h);
+    if (r.svg) await downloadFlatSvg(r.svg, dlNameFor(r), r.w, r.h);
     await new Promise(res => setTimeout(res, 200));
   }
 }
@@ -1330,8 +1411,41 @@ async function loadFromSheet(){
     setStatus("讀取失敗。請確認試算表已開「知道連結的任何人可檢視」,或改用「貼上資料」/「上傳檔案」。");
   }
 }
+/* 直接貼商品頁/訂單的整段文字(商品標題一行,下面每個欄位一行),例如:
+     【送禮首選】星座開運胖胖貓X永生花玻璃球【花色自選】
+     星座胖胖貓: 天秤座
+     刻印圖案: 天秤座x玫瑰天竺葵
+     刻印文字: 1017
+   這種格式沒有表頭、也沒有分隔符號,Papa.parse 會把每一行當成獨立一筆訂單(星座跟商品名稱都丟了)。
+   所以偵測到「沒有 Tab 且有以『刻印文字:』開頭的行」就改成區塊解析:
+   以空行或「【」開頭的行當作新訂單的開始,第一行當商品名稱,其餘行用逗號串成備注。
+   (試算表複製貼上的資料是 Tab 分隔,不會走到這裡。) */
+function pasteBlocksToRows(text){
+  const blocks = [];
+  let cur = null;
+  text.split(/\r?\n/).forEach(line => {
+    const s = line.trim();
+    if (!s){ cur = null; return; }
+    if (!cur || s.startsWith("【")){ cur = []; blocks.push(cur); }
+    cur.push(s);
+  });
+  const rows = [["訂單編號","姓名","商品","備注"]];
+  blocks.forEach(b => {
+    const hasKey = /^刻印文字[:：]/.test(b[b.length-1]) || b.some(l => /^(刻印文字|刻印圖案|星座)[^:：]*[:：]/.test(l));
+    if (!hasKey) return;
+    const titleIsField = /[:：]/.test(b[0]);
+    const title = titleIsField ? "" : b[0];
+    const fields = titleIsField ? b : b.slice(1);
+    rows.push(["", "", title, fields.join(", ")]);
+  });
+  return rows;
+}
 function loadFromPaste(){
   const t = document.getElementById("pasteText").value.trim();
+  if (!t.includes("\t") && /^\s*刻印文字[:：]/m.test(t)){
+    applyRows(pasteBlocksToRows(t));
+    return;
+  }
   applyRows(Papa.parse(t).data);
 }
 document.getElementById("dataInput").addEventListener("change", async function(){
@@ -1508,6 +1622,16 @@ function renderManualIconSelect(){
     });
     sel.appendChild(grp);
   }
+  /* 星座小卡(雙面 90×54mm):選星座＋填刻印文字,一筆會產生正面、背面兩張 */
+  if (typeof ZODIAC_CARDS !== "undefined"){
+    const grp = document.createElement("optgroup");
+    grp.label = "星座小卡(雙面 90×54mm,文字限 "+CARD_MAX_CHARS+" 字)";
+    Object.keys(ZODIAC_CARDS).forEach(z => {
+      const op = document.createElement("option"); op.value = "card:"+z; op.textContent = "小卡・"+z;
+      grp.appendChild(op);
+    });
+    sel.appendChild(grp);
+  }
   if ([...sel.options].some(o => o.value === current)) sel.value = current;
 }
 function addManualOrder(){
@@ -1515,14 +1639,15 @@ function addManualOrder(){
   const text = document.getElementById("manualText").value.trim();
   const qty = Math.max(1, parseInt(document.getElementById("manualQty").value, 10) || 1);
   /* 「tpl:」開頭的是辦公室款樣板,不是星座小圖 */
+  const isCard = picked.startsWith("card:");
   const isTpl = picked.startsWith("tpl:");
   const templateName = isTpl ? picked.slice(4) : "";
-  const zodiac = isTpl ? "" : picked;
+  const zodiac = isTpl ? "" : isCard ? picked.slice(5) : picked;
   const item = isTpl ? TEMPLATE_ITEMS.find(t => templateName.startsWith(t.prefix)) : null;
   if (!zodiac && !templateName && !text){ alert("請至少選擇圖案或輸入文字"); return; }
   manualCounter++;
   manualOrders.push({id:"manual-"+manualCounter, name:"", orderId:"", date:"", zodiac, color:"", text, qty,
-                     templateName, template: item ? item.key : ""});
+                     templateName, template: item ? item.key : "", fnCategory: isCard ? "星座小卡" : ""});
   document.getElementById("manualText").value = "";
   renderManualList(); updateStatus(); render();
 }
@@ -1594,7 +1719,23 @@ function renderSettings(){
 
 /* ── 結果 UI ── */
 function currentResults(){
-  return visibleOrders().map(o => {
+  return visibleOrders().flatMap(o => {
+    /* 星座小卡:一筆訂單 = 正面(客人文字)＋背面(中文固定面)兩張 */
+    if (o.fnCategory === "星座小卡"){
+      return ["front","back"].map(side => {
+        const built = buildCardSvg(o, side, settings);
+        if (!built) return {order:o, icon:null, svg:"", w:CARD_PX.w, h:CARD_PX.h, missing:o.zodiac||o.pattern, cardSide:side};
+        const len = [...String(o.text||"").replace(/\s/g,"")].length;
+        return {order:o, icon:null, svg:built.svg, w:built.w, h:built.h, textSize:built.textSize, cardSide:side,
+                template:"星座小卡 "+CARD_SIDE_LABEL[side], badGlyphs:"",
+                tooLong: side==="front" && len > CARD_MAX_CHARS ? len : 0};
+      });
+    }
+    return [currentResultFor(o)];
+  });
+}
+function currentResultFor(o){
+  {
     /* 辦公室款先處理:整張樣板 ＋ 排進圖裡的刻印文字 */
     const tplName = templateNameFor(o);
     if (tplName){
@@ -1618,7 +1759,7 @@ function currentResults(){
     const s2 = (iconSize === settings.iconSize && gap1 === settings.gap1) ? settings : {...settings, iconSize, gap1};
     const {svg, w, h, textSize} = buildSvg(o, icon, s2);
     return {order:o, icon, svg, w, h, textSize, missing: !icon && !ZODIAC_FALLBACK[o.zodiac] && o.zodiac};
-  });
+  }
 }
 
 function render(){
@@ -1638,9 +1779,9 @@ function render(){
   const grid = document.getElementById("resultGrid");
   grid.innerHTML = "";
   rs.forEach((r, idx) => {
-    const isEditing = editingCardId === r.order.id;
+    const isEditing = editingCardId === r.order.id && r.cardSide !== "back";
     const card = document.createElement("div");
-    card.className = "r-card" + ((r.missing || r.missingTemplate || r.badGlyphs) ? " missing" : "") + (isEditing ? " editing" : "");
+    card.className = "r-card" + ((r.missing || r.missingTemplate || r.badGlyphs || r.tooLong) ? " missing" : "") + (isEditing ? " editing" : "");
     const prev = document.createElement("div");
     prev.className = "preview"; prev.innerHTML = r.svg;
     const info = document.createElement("div");
@@ -1648,11 +1789,12 @@ function render(){
     const meta = [r.template || r.order.zodiac, r.order.color, r.order.qty>1 ? "x"+r.order.qty : ""].filter(Boolean).join(" · ");
     const idTag = r.order.orderId ? " #"+r.order.orderId.slice(-6) : "";
     info.innerHTML = '<div class="t"></div><div class="m"></div>';
-    info.querySelector(".t").textContent = r.order.text || (r.template ? "("+r.template+" 無文字)" : (r.order.zodiac ? "("+r.order.zodiac+" 僅圖案)" : "(無文字)"));
+    info.querySelector(".t").textContent = r.cardSide === "back" ? "(中文面·固定)" : r.order.text || (r.template ? "("+r.template+" 無文字)" : (r.order.zodiac ? "("+r.order.zodiac+" 僅圖案)" : "(無文字)"));
     info.querySelector(".m").innerHTML = esc(meta) + "<br>" + esc(r.order.name + idTag);
 
     const warn = [];
     if (r.missingTemplate) warn.push("找不到樣板「"+r.missingTemplate+"」,先用純文字生成(請到步驟①上傳同名 SVG)");
+    if (r.tooLong) warn.push("刻印文字 "+r.tooLong+" 字,超過小卡上限 "+CARD_MAX_CHARS+" 字,請跟客人確認");
     if (r.badGlyphs) warn.push("這套字型沒有「"+r.badGlyphs+"」,刻出來會是空白,請換字體或改字");
     if (warn.length){
       const w = document.createElement("div");
@@ -1679,7 +1821,8 @@ function render(){
     if (isEditing){
       const tplItem = r.template ? (templateItem(r.order.template) || TEMPLATE_ITEMS.find(t => r.template.startsWith(t.prefix))) : null;
       const tplFontIdx = tplItem ? FONT_OPTIONS.findIndex(f => f.key === tplItem.fontKey) : -1;
-      const defaultIdx = tplFontIdx >= 0 ? tplFontIdx : (r.order.zodiac ? settings.fontIdx : PURE_TEXT_FONT_IDX);
+      const cardFontIdx = FONT_OPTIONS.findIndex(f => f.key === CARD_FONT_KEY);
+      const defaultIdx = r.cardSide ? cardFontIdx : tplFontIdx >= 0 ? tplFontIdx : (r.order.zodiac ? settings.fontIdx : PURE_TEXT_FONT_IDX);
       const fontEdit = document.createElement("div");
       fontEdit.className = "fontedit";
 
@@ -1760,9 +1903,9 @@ function render(){
     const dl = document.createElement("div"); dl.className = "dl";
     const b0 = document.createElement("button"); b0.className = "btn-sm active"; b0.textContent = "雷雕用 SVG";
     b0.title = "壓平成單一圖片的 SVG,匯入 xTool 等雷雕軟體不會跑位變形";
-    b0.onclick = e => { e.stopPropagation(); downloadFlatSvg(r.svg, fileNameFor(r.order), r.w, r.h); };
+    b0.onclick = e => { e.stopPropagation(); downloadFlatSvg(r.svg, dlNameFor(r), r.w, r.h); };
     const b2 = document.createElement("button"); b2.className = "btn-sm"; b2.textContent = "PNG";
-    b2.onclick = e => { e.stopPropagation(); downloadPng(r.svg, fileNameFor(r.order)); };
+    b2.onclick = e => { e.stopPropagation(); downloadPng(r.svg, dlNameFor(r)); };
     dl.addEventListener("click", e => e.stopPropagation());
     dl.append(b0, b2);
     info.appendChild(dl);
@@ -2066,7 +2209,7 @@ function renderSimSourceOptions(){
   rs.forEach((r, i) => {
     const op = document.createElement("option");
     op.value = i;
-    op.textContent = (r.order.text || (r.order.zodiac ? "["+r.order.zodiac+"]" : "圖案")) + (r.order.name ? "・"+r.order.name : "");
+    op.textContent = (r.order.text || (r.order.zodiac ? "["+r.order.zodiac+"]" : "圖案")) + (r.order.name ? "・"+r.order.name : "") + (r.cardSide ? "("+CARD_SIDE_LABEL[r.cardSide]+")" : "");
     sel.appendChild(op);
   });
   if ([...sel.options].some(o => o.value === current)) sel.value = current;

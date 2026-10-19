@@ -1,6 +1,6 @@
 {
-  "name": "雷雕刻印產生器",
-  "short_name": "雷雕刻印",
+  "name": "客製化小工具",
+  "short_name": "小工具",
   "start_url": "./index.html",
   "display": "standalone",
   "background_color": "#1C1A16",
