@@ -64,9 +64,12 @@ for fn, cols, rows, names, kind in SRC:
             inner = re.sub(r'class="cls-1"', 'fill="%s"' % fill, d['inner'])
             inner = re.sub(r'<(path|polygon|rect)(?![^>]*fill=)', r'<\1 fill="%s"' % fill, inner)
             cards.setdefault(z, {})[kind] = {'box': d['box'], 'inner': inner, 'slot': d['slot']}
+# 卡面 90x54mm 不變,中間內容(符號+字)整體縮成寬 40mm 置中:卡大字小比較好看,
+# 雷雕機框選範圍也就是整張卡片(畫布),對位比較好對。
+CONTENT_W = 400   # 單位 = 0.1mm,所以 400 = 40mm
 # uniform scale per side so type sizes match across all 12 cards (card = 900x540 units, 10 units per mm)
 out = {}
-for kind, (mw, mh) in {'front': (780, 440), 'back': (780, 440)}.items():
+for kind, (mw, mh) in {'front': (CONTENT_W, 300), 'back': (CONTENT_W, 300)}.items():
     k = min(min(mw/(c[kind]['box'][2]-c[kind]['box'][0]), mh/(c[kind]['box'][3]-c[kind]['box'][1])) for c in cards.values())
     print(kind, 'scale', round(k, 4), '(mm per source unit %.3f)' % (k/10))
     for z, c in cards.items():
