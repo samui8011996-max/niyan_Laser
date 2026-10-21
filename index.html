@@ -274,46 +274,9 @@
   <details class="acc" open>
     <summary>② 讀取訂單資料</summary>
     <div class="acc-body">
-    <div class="row" style="margin-bottom:14px">
-      <button class="btn-sm tab active" data-tab="sheet">Google 試算表</button>
-      <button class="btn-sm tab" data-tab="paste">貼上資料</button>
-      <button class="btn-sm tab" data-tab="file">上傳檔案</button>
-      <button class="btn-sm tab" data-tab="manual">手動輸入</button>
-    </div>
-    <div class="tabpane show" id="pane-sheet">
-      <div class="row">
-        <input id="sheetUrl" style="flex:1 1 320px"
-          value="https://docs.google.com/spreadsheets/d/1yWvDnbI9w1ukexlaZWNAOyPHUS7JKMgGIDPV83wlSQ8/edit?usp=sharing"
-          placeholder="貼上 Google 試算表分享連結(需開啟「知道連結的任何人可檢視」)">
-        <button class="btn" onclick="loadFromSheet()">讀取</button>
-      </div>
-    </div>
-    <div class="tabpane" id="pane-paste">
-      <textarea id="pasteText" rows="6" placeholder="直接從 Google 試算表全選複製、貼到這裡(包含備注欄即可)"></textarea>
-      <button class="btn" style="margin-top:10px" onclick="loadFromPaste()">解析</button>
-    </div>
-    <div class="tabpane" id="pane-file">
-      <input type="file" id="dataInput" accept=".xlsx,.xls,.csv,.tsv" hidden>
-      <button class="btn" onclick="dataInput.click()">選擇 .xlsx / .csv 檔案</button>
-    </div>
-    <div class="tabpane" id="pane-manual">
-      <p class="hint">自己選一個素材庫裡的圖案、填上要刻印的文字,按「加入」就會用步驟③的版面設定生成一筆雷雕圖,不需要訂單資料。</p>
-      <div class="row" style="align-items:flex-end">
-        <div style="flex:1 1 160px">
-          <label>圖案(可不選)</label>
-          <select id="manualZodiac"></select>
-        </div>
-        <div style="flex:2 1 220px">
-          <label>刻印文字</label>
-          <input id="manualText" type="text" placeholder="要刻印的文字">
-        </div>
-        <div style="flex:0 0 80px">
-          <label>數量</label>
-          <input id="manualQty" type="number" min="1" value="1">
-        </div>
-        <button class="btn" onclick="addManualOrder()">＋ 加入</button>
-      </div>
-      <div id="manualList" style="margin-top:12px"></div>
+    <div class="row" style="align-items:center;gap:10px">
+      <button class="btn" onclick="loadFromD1()">重新讀取</button>
+      <span class="hint" style="margin:0">雷雕訂單直接從資料庫讀:出貨小幫手按「上傳」時送過來,打開這頁會自動讀取,只保留 14 天。</span>
     </div>
     <div class="row" id="dateFilterRow" style="display:none;margin-top:10px;align-items:center;gap:10px">
       <label style="display:flex;align-items:center;gap:6px;margin:0;color:var(--text);font-size:12.5px">
@@ -764,7 +727,7 @@ function parseNote(note){
   /* 星座欄位常常會帶日期區間,例如「獅子座(7/23~8/22)」,只留星座名稱,
      日期區間不需要顯示、也不需要進檔名。 */
   let zodiac = (cleanNote.match(/星座[:：]\s*(.+?)\s*(?=刻印文字|[,，]|$)/)||[])[1]?.trim() || "";
-  zodiac = zodiac.replace(/[(（][^)）]*[)）]/g, "").trim();
+  zodiac = zodiac.replace(/[(（][^)）]*[)）]/g, "").replace(/\s*-\s*$/, "").trim();   // 空的刻印欄留下的「 -」不要
   /* 辦公室款用「刻印圖案」指定要套哪一張樣板(無圖案 / 財富自由 / 提早退休…) */
   const pattern = (cleanNote.match(/刻印圖案[:：]\s*([^,，\/]+?)\s*(?=[,，\/]|\s\S+[:：]|$)/)||[])[1]?.trim() || "";
   let color = (cleanNote.match(/顏色[:：]\s*(.+?)\s*(?=[,，]|星座|$)/)||[])[1]?.trim() || "";
@@ -1302,16 +1265,22 @@ function fnTagFor(o){
   const rule = o.fnCategory && FILENAME_RULES[o.fnCategory];
   return rule ? rule.tag(o, o.fnSize || "") : "";
 }
+/* 匯出日期(出貨小幫手上傳那天,資料庫的「日期」欄 2026/10/21)寫成 20261021 放進檔名 */
+function exportDateTag(o){
+  const p = parseDateParts(o.date);
+  return p ? String(p.y)+String(p.m).padStart(2,"0")+String(p.d).padStart(2,"0") : "";
+}
 function fileNameFor(o){
   const rule = o.fnCategory && FILENAME_RULES[o.fnCategory];
   if (rule){
     const tag = fnTagFor(o);
-    /* 姓名+訂單編號放最前面(方便現場對單),刻印內容(顏色/圖案/文字)放後面 */
-    const fields = [o.name, o.orderId].concat(rule.fields(o)).filter(Boolean);
+    /* 匯出日期+訂單編號放最前面(方便現場對單),刻印內容(顏色/圖案/文字)放後面。
+       2026-10-21 起資料不存姓名,改放匯出日期(出貨小幫手上傳那天,使用者要求) */
+    const fields = [exportDateTag(o), o.name, o.orderId].concat(rule.fields(o)).filter(Boolean);
     return sanitizeFilename("【"+tag+"】"+fields.join("_"));
   }
-  /* 沒有比對到分類規則的商品(例如舊資料、手動輸入)維持原本的檔名格式 */
-  const base = (o.orderId||"訂單")+"_"+(o.name||"");
+  /* 沒有比對到分類規則的商品(例如舊資料)維持原本的檔名格式,前面一樣加匯出日期 */
+  const base = [exportDateTag(o), o.orderId||"訂單", o.name].filter(Boolean).join("_");
   const tplName = templateNameFor(o);
   if (tplName) return sanitizeFilename(base+"_"+tplName+"_"+(o.text||"無文字"));
   return sanitizeFilename(base+"_"+(o.text||o.zodiac||"圖案"));
@@ -1380,92 +1349,27 @@ async function downloadAll(){
 const statusEl = document.getElementById("status");
 function setStatus(msg, ok){ statusEl.textContent = msg; statusEl.className = ok ? "ok" : ""; }
 
-function gvizJsonp(sheetId, timeoutMs){
-  return new Promise((resolve, reject) => {
-    const cbName = "__gvizCb_" + Date.now() + "_" + Math.floor(Math.random()*1e6);
-    const script = document.createElement("script");
-    const timer = setTimeout(() => { cleanup(); reject(new Error("timeout")); }, timeoutMs || 10000);
-    function cleanup(){ delete window[cbName]; script.remove(); clearTimeout(timer); }
-    window[cbName] = (json) => { cleanup(); resolve(json); };
-    script.onerror = () => { cleanup(); reject(new Error("script-error")); };
-    script.src = "https://docs.google.com/spreadsheets/d/"+sheetId+"/gviz/tq?tqx=out:json;responseHandler:"+cbName;
-    document.head.appendChild(script);
-  });
-}
-function gvizTableToRows(json){
-  const cols = json.table.cols.map(c => c.label || "");
-  const rows = json.table.rows.map(r => cols.map((_, j) => {
-    const cell = r.c && r.c[j];
-    if (!cell) return "";
-    if (cell.f != null) return cell.f;
-    return cell.v == null ? "" : String(cell.v);
-  }));
-  return [cols, ...rows];
-}
-async function loadFromSheet(){
-  const url = document.getElementById("sheetUrl").value;
-  const m = url.match(/\/d\/([a-zA-Z0-9-_]+)/);
-  if (!m){ setStatus("網址格式不正確,請確認是 Google 試算表連結"); return; }
-  setStatus("讀取試算表中…");
+/* ── 讀取雷雕訂單(2026-10-21 起改從資料庫讀,不再用 Google 試算表/貼上/上傳檔案/手動輸入) ──
+   出貨小幫手按「上傳」時把雷雕訂單寫進 D1(laser_orders),這裡透過出貨小幫手的 /api 讀出來。
+   每筆只有:訂單編號、品項(完整備註,星座/顏色/刻印圖案都在裡面)、類型、刻印文字、上傳日期。
+   沒有姓名;超過 14 天的資料後端會自己刪掉。
+   轉成原本試算表的列格式(日期/姓名/訂單編號/備注)丟給 rowsToOrders,後面解析、分類、檔名規則都不用動。 */
+const LASER_API = "https://niyan-shipping-pages.pages.dev/api";
+async function loadFromD1(){
+  setStatus("讀取雷雕訂單中…");
   try{
-    const json = await gvizJsonp(m[1]);
-    if (json.status === "error") throw new Error((json.errors && json.errors[0] && json.errors[0].detailed_message) || "gviz-error");
-    applyRows(gvizTableToRows(json));
-  }catch(e){
-    setStatus("讀取失敗。請確認試算表已開「知道連結的任何人可檢視」,或改用「貼上資料」/「上傳檔案」。");
-  }
-}
-/* 直接貼商品頁/訂單的整段文字(商品標題一行,下面每個欄位一行),例如:
-     【送禮首選】星座開運胖胖貓X永生花玻璃球【花色自選】
-     星座胖胖貓: 天秤座
-     刻印圖案: 天秤座x玫瑰天竺葵
-     刻印文字: 1017
-   這種格式沒有表頭、也沒有分隔符號,Papa.parse 會把每一行當成獨立一筆訂單(星座跟商品名稱都丟了)。
-   所以偵測到「沒有 Tab 且有以『刻印文字:』開頭的行」就改成區塊解析:
-   以空行或「【」開頭的行當作新訂單的開始,第一行當商品名稱,其餘行用逗號串成備注。
-   (試算表複製貼上的資料是 Tab 分隔,不會走到這裡。) */
-function pasteBlocksToRows(text){
-  const blocks = [];
-  let cur = null;
-  text.split(/\r?\n/).forEach(line => {
-    const s = line.trim();
-    if (!s){ cur = null; return; }
-    if (!cur || s.startsWith("【")){ cur = []; blocks.push(cur); }
-    cur.push(s);
-  });
-  const rows = [["訂單編號","姓名","商品","備注"]];
-  blocks.forEach(b => {
-    const hasKey = /^刻印文字[:：]/.test(b[b.length-1]) || b.some(l => /^(刻印文字|刻印圖案|星座)[^:：]*[:：]/.test(l));
-    if (!hasKey) return;
-    const titleIsField = /[:：]/.test(b[0]);
-    const title = titleIsField ? "" : b[0];
-    const fields = titleIsField ? b : b.slice(1);
-    rows.push(["", "", title, fields.join(", ")]);
-  });
-  return rows;
-}
-function loadFromPaste(){
-  const t = document.getElementById("pasteText").value.trim();
-  if (!t.includes("\t") && /^\s*刻印文字[:：]/m.test(t)){
-    applyRows(pasteBlocksToRows(t));
-    return;
-  }
-  applyRows(Papa.parse(t).data);
-}
-document.getElementById("dataInput").addEventListener("change", async function(){
-  const file = this.files[0]; this.value = "";
-  if (!file) return;
-  try{
-    let rows;
-    if (/\.(xlsx|xls)$/i.test(file.name)){
-      const wb = XLSX.read(await file.arrayBuffer());
-      rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], {header:1, raw:false});
-    } else {
-      rows = Papa.parse(await file.text()).data;
-    }
+    const res = await fetch(LASER_API, {method:"POST", headers:{"Content-Type":"text/plain;charset=utf-8"},
+                                        body: JSON.stringify({action:"getLaserOrders"})});
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error || "讀取失敗");
+    const rows = [["日期","姓名","訂單編號","備注"]];
+    data.orders.forEach(o => rows.push([o.date, "", o.orderId, o.item]));
     applyRows(rows);
-  }catch(e){ setStatus("檔案讀取失敗,請確認格式為 .xlsx 或 .csv"); }
-});
+    if (!data.orders.length) setStatus("資料庫目前沒有雷雕訂單(出貨小幫手按「上傳」後才會出現,只保留 "+(data.keepDays||14)+" 天)");
+  }catch(e){
+    setStatus("讀取失敗:"+e.message+"。網路正常的話,稍後再按「重新讀取」。");
+  }
+}
 function applyRows(rows){
   allOrders = rowsToOrders(rows);
   hasDateColumn = allOrders.some(o => parseDateParts(o.date));
@@ -2385,7 +2289,7 @@ async function loadSimOrdersForSelectedDate(){
   const todayOnlyCb = document.getElementById("todayOnly");
   if (filterDateInput && dateInput.value) filterDateInput.value = dateInput.value;
   if (todayOnlyCb) todayOnlyCb.checked = true;
-  await loadFromSheet();
+  await loadFromD1();
 }
 document.getElementById("simPatternSrcChips").querySelectorAll(".btn-sm").forEach(btn => {
   btn.addEventListener("click", async () => {
@@ -2609,6 +2513,7 @@ renderLibrary();
 renderSettings();
 renderFontStatus();
 render();
+loadFromD1();   // 打開網站就自動讀資料庫裡的雷雕訂單
 renderPaperPreview();
 /* 文字的位置與大小是用 canvas 量出來的,字體還沒載入時量到的是替代字體、版面會跑掉,
    所以先把打包的字體真的載進瀏覽器,載完再重畫一次。 */
