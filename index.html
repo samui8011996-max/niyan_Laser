@@ -52,6 +52,18 @@
   h2{font-size:13px;font-weight:800;letter-spacing:3px;color:var(--gold);margin:0 0 14px}
   .hint{font-size:12.5px;color:var(--muted);margin:0 0 12px;line-height:1.7}
   .hint b{color:var(--text)}
+  /* 步驟②的訂單列表(2026-10-21):看資料庫裡的訂單、直接改品項/刻印文字 */
+  .ol-wrap{margin-top:12px;overflow-x:auto}
+  .ol{width:100%;border-collapse:collapse;font-size:12.5px}
+  .ol th{text-align:left;color:var(--muted);font-weight:500;letter-spacing:1px;padding:6px 8px;border-bottom:1px solid var(--border);white-space:nowrap}
+  .ol td{padding:6px 8px;border-bottom:1px solid var(--border);vertical-align:middle}
+  .ol td.nw{white-space:nowrap;font-variant-numeric:tabular-nums}
+  .ol .ol-type{display:inline-block;padding:1px 8px;border-radius:999px;background:var(--panel2);border:1px solid var(--border);color:var(--gold);white-space:nowrap}
+  .ol input{width:100%;min-width:140px;padding:6px 8px;font-size:12.5px}
+  .ol td.item input{min-width:320px}
+  .ol tr.dirty td{background:rgba(232,180,74,.08)}
+  .ol .ol-msg{font-size:11px;color:var(--muted);white-space:nowrap}
+  .ol .ol-msg.err{color:var(--danger)}
   input,select,textarea{background:var(--bg);border:1px solid var(--border);color:var(--text);
     border-radius:8px;padding:8px 10px;font-size:13px;outline:none;width:100%;font-family:inherit}
   textarea{font-family:monospace;resize:vertical}
@@ -286,6 +298,7 @@
       <input type="date" id="filterDate" style="width:auto">
     </div>
     <p id="status"></p>
+    <div id="orderList" class="ol-wrap"></div>
     <p id="missing"></p>
     </div>
   </details>
@@ -1355,6 +1368,90 @@ function setStatus(msg, ok){ statusEl.textContent = msg; statusEl.className = ok
    沒有姓名;超過 14 天的資料後端會自己刪掉。
    轉成原本試算表的列格式(日期/姓名/訂單編號/備注)丟給 rowsToOrders,後面解析、分類、檔名規則都不用動。 */
 const LASER_API = "https://niyan-shipping-pages.pages.dev/api";
+let d1Orders = [];   // 資料庫原始資料(含鍵值),訂單列表改完要用這份重建
+function applyD1Orders(){
+  const rows = [["日期","姓名","訂單編號","備注"]];
+  d1Orders.forEach(o => rows.push([o.date, "", o.orderId, o.item]));
+  applyRows(rows);
+}
+
+/* ── 訂單列表:看資料庫裡的每一筆,直接改品項(完整備註)跟刻印文字,按「存」寫回資料庫 ──
+   (使用者 2026-10-21)改完重新解析,下面④的結果、檔名、類型都會跟著變。
+   跟上面「只生成指定日期的訂單」同一個篩選。 */
+function d1Visible(){
+  const cb = document.getElementById("todayOnly");
+  if (!(cb && cb.checked)) return d1Orders;
+  const t = selectedFilterParts();
+  return d1Orders.filter(o => isSameDate(parseDateParts(o.date), t));
+}
+function engravingOf(item){
+  return (String(item||"").replace(/\s*[xX×]\d+\s*$/, "").match(/刻印文字[:：]\s*(.+)$/)||[])[1]?.trim() || "";
+}
+/* 品項裡的「刻印文字: …」換成新的;原本沒有就補在數量前面;清空就拿掉 */
+function withEngraving(item, text){
+  const s = String(item||"");
+  const qty = (s.match(/\s*[xX×]\d+\s*$/)||[""])[0];
+  let body = qty ? s.slice(0, s.length-qty.length) : s;
+  body = body.replace(/\s*刻印文字[:：]\s*.*$/, "").replace(/\s+-\s*$/, "");
+  if (text) body += " 刻印文字: "+text;
+  return (body.trim()+qty).replace(/\s+/g," ").trim();
+}
+/* 類型照④的同一套規則算(fnCategoryFor + FILENAME_RULES),存回資料庫 */
+function typeOfItem(o){
+  const parsed = rowsToOrders([["日期","姓名","訂單編號","備注"],[o.date,"",o.orderId,o.item]])[0];
+  const tag = parsed ? fnTagFor(parsed) : "";
+  return tag ? "【"+tag+"】" : "";
+}
+function renderOrderList(){
+  const box = document.getElementById("orderList");
+  if (!box) return;
+  const list = d1Visible();
+  if (!list.length){ box.innerHTML = ""; return; }
+  const esc2 = t => String(t??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+  box.innerHTML = '<table class="ol"><thead><tr><th>日期</th><th>訂單編號</th><th>類型</th><th>品項</th><th>刻印文字</th><th></th></tr></thead><tbody>'
+    + list.map(o => '<tr data-key="'+esc2(o.key)+'">'
+      + '<td class="nw">'+esc2(o.date)+'</td>'
+      + '<td class="nw">'+esc2(o.orderId)+'</td>'
+      + '<td>'+(typeOfItem(o) ? '<span class="ol-type">'+esc2(typeOfItem(o))+'</span>' : '')+'</td>'
+      + '<td class="item"><input data-f="item" value="'+esc2(o.item)+'" aria-label="品項"></td>'
+      + '<td><input data-f="text" value="'+esc2(engravingOf(o.item))+'" placeholder="沒填=換木片" aria-label="刻印文字"></td>'
+      + '<td class="nw"><button class="btn-sm" data-act="save">存</button> <span class="ol-msg"></span></td>'
+      + '</tr>').join("")
+    + '</tbody></table>';
+}
+async function saveOrderRow(tr){
+  const o = d1Orders.find(x => x.key === tr.dataset.key);
+  if (!o) return;
+  const msg = tr.querySelector(".ol-msg");
+  const itemIn = tr.querySelector('[data-f="item"]').value.trim();
+  const textIn = tr.querySelector('[data-f="text"]').value.trim();
+  /* 刻印文字格優先:品項裡原本的「刻印文字:」會被換成這格的內容 */
+  const next = {...o, item: withEngraving(itemIn, textIn), text: textIn};
+  next.type = typeOfItem(next);
+  msg.className = "ol-msg"; msg.textContent = "存檔中…";
+  try{
+    const res = await fetch(LASER_API, {method:"POST", headers:{"Content-Type":"text/plain;charset=utf-8"},
+      body: JSON.stringify({action:"updateLaserOrder", key:o.key, item:next.item, text:next.text, type:next.type})});
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error || "存檔失敗");
+    Object.assign(o, next);
+    applyD1Orders();   // 重新解析:④的圖、檔名、類型跟著更新
+    const row = document.querySelector('#orderList tr[data-key="'+CSS.escape(o.key)+'"] .ol-msg');
+    if (row) row.textContent = "已存";
+  }catch(e){
+    msg.className = "ol-msg err"; msg.textContent = e.message;
+  }
+}
+document.getElementById("orderList").addEventListener("click", e => {
+  const b = e.target.closest('button[data-act="save"]');
+  if (b) saveOrderRow(b.closest("tr"));
+});
+document.getElementById("orderList").addEventListener("input", e => {
+  if (e.target.matches("input[data-f]")) e.target.closest("tr").classList.add("dirty");
+});
+document.getElementById("orderList").addEventListener("keydown", e => {
+  if (e.key === "Enter" && e.target.matches("input[data-f]")){ e.preventDefault(); saveOrderRow(e.target.closest("tr")); }
+});
 async function loadFromD1(){
   setStatus("讀取雷雕訂單中…");
   try{
@@ -1362,9 +1459,8 @@ async function loadFromD1(){
                                         body: JSON.stringify({action:"getLaserOrders"})});
     const data = await res.json();
     if (!data.ok) throw new Error(data.error || "讀取失敗");
-    const rows = [["日期","姓名","訂單編號","備注"]];
-    data.orders.forEach(o => rows.push([o.date, "", o.orderId, o.item]));
-    applyRows(rows);
+    d1Orders = data.orders;
+    applyD1Orders();
     if (!data.orders.length) setStatus("資料庫目前沒有雷雕訂單(出貨小幫手按「上傳」後才會出現,只保留 "+(data.keepDays||14)+" 天)");
   }catch(e){
     setStatus("讀取失敗:"+e.message+"。網路正常的話,稍後再按「重新讀取」。");
@@ -1390,6 +1486,7 @@ function applyRows(rows){
   render();
 }
 function updateStatus(){
+  renderOrderList();
   if (!allOrders.length && !manualOrders.length){ setStatus("沒有找到含「刻印文字」的資料列"); return; }
   const vis = visibleOrders();
   let msg = allOrders.length ? ("成功解析 "+allOrders.length+" 筆訂單") : "";
