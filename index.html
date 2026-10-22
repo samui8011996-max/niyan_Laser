@@ -64,6 +64,7 @@
   .ol tr.dirty td{background:rgba(232,180,74,.08)}
   .ol .ol-msg{font-size:11px;color:var(--muted);white-space:nowrap}
   .ol .ol-msg.err{color:var(--danger)}
+  .ol .ol-del{color:var(--danger);border-color:var(--danger)}
   input,select,textarea{background:var(--bg);border:1px solid var(--border);color:var(--text);
     border-radius:8px;padding:8px 10px;font-size:13px;outline:none;width:100%;font-family:inherit}
   textarea{font-family:monospace;resize:vertical}
@@ -1369,10 +1370,11 @@ function setStatus(msg, ok){ statusEl.textContent = msg; statusEl.className = ok
    轉成原本試算表的列格式(日期/姓名/訂單編號/備注)丟給 rowsToOrders,後面解析、分類、檔名規則都不用動。 */
 const LASER_API = "https://niyan-shipping-pages.pages.dev/api";
 let d1Orders = [];   // 資料庫原始資料(含鍵值),訂單列表改完要用這份重建
-function applyD1Orders(){
+/* keepFilter:列表上存檔/刪除後重建,不要把「只生成指定日期」又打勾(會讓舊日期的訂單突然不見) */
+function applyD1Orders(keepFilter){
   const rows = [["日期","姓名","訂單編號","備注"]];
   d1Orders.forEach(o => rows.push([o.date, "", o.orderId, o.item]));
-  applyRows(rows);
+  applyRows(rows, keepFilter);
 }
 
 /* ── 訂單列表:看資料庫裡的每一筆,直接改品項(完整備註)跟刻印文字,按「存」寫回資料庫 ──
@@ -1415,7 +1417,7 @@ function renderOrderList(){
       + '<td>'+(typeOfItem(o) ? '<span class="ol-type">'+esc2(typeOfItem(o))+'</span>' : '')+'</td>'
       + '<td class="item"><input data-f="item" value="'+esc2(o.item)+'" aria-label="品項"></td>'
       + '<td><input data-f="text" value="'+esc2(engravingOf(o.item))+'" placeholder="沒填=換木片" aria-label="刻印文字"></td>'
-      + '<td class="nw"><button class="btn-sm" data-act="save">存</button> <span class="ol-msg"></span></td>'
+      + '<td class="nw"><button class="btn-sm" data-act="save">存</button> <button class="btn-sm ol-del" data-act="del">刪除</button> <span class="ol-msg"></span></td>'
       + '</tr>').join("")
     + '</tbody></table>';
 }
@@ -1434,17 +1436,38 @@ async function saveOrderRow(tr){
       body: JSON.stringify({action:"updateLaserOrder", key:o.key, item:next.item, text:next.text, type:next.type})});
     const data = await res.json();
     if (!data.ok) throw new Error(data.error || "存檔失敗");
+    if (data.date) next.date = data.date;   // 改過的那筆日期變成今天(後端給的)
     Object.assign(o, next);
-    applyD1Orders();   // 重新解析:④的圖、檔名、類型跟著更新
+    applyD1Orders(true);   // 重新解析:④的圖、檔名、類型跟著更新
     const row = document.querySelector('#orderList tr[data-key="'+CSS.escape(o.key)+'"] .ol-msg');
     if (row) row.textContent = "已存";
   }catch(e){
     msg.className = "ol-msg err"; msg.textContent = e.message;
   }
 }
+/* 刪除:從資料庫拿掉這筆(所有人都看不到了),要先確認 */
+async function deleteOrderRow(tr){
+  const o = d1Orders.find(x => x.key === tr.dataset.key);
+  if (!o) return;
+  if (!confirm("確定要刪除這筆雷雕訂單?\n"+o.orderId+"\n"+o.item+"\n\n刪除後所有人都看不到,出貨小幫手重新上傳才會再出現。")) return;
+  const msg = tr.querySelector(".ol-msg");
+  msg.className = "ol-msg"; msg.textContent = "刪除中…";
+  try{
+    const res = await fetch(LASER_API, {method:"POST", headers:{"Content-Type":"text/plain;charset=utf-8"},
+      body: JSON.stringify({action:"deleteLaserOrder", key:o.key})});
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error || "刪除失敗");
+    d1Orders = d1Orders.filter(x => x.key !== o.key);
+    applyD1Orders(true);
+  }catch(e){
+    msg.className = "ol-msg err"; msg.textContent = e.message;
+  }
+}
 document.getElementById("orderList").addEventListener("click", e => {
-  const b = e.target.closest('button[data-act="save"]');
-  if (b) saveOrderRow(b.closest("tr"));
+  const b = e.target.closest("button[data-act]");
+  if (!b) return;
+  if (b.dataset.act === "save") saveOrderRow(b.closest("tr"));
+  else if (b.dataset.act === "del") deleteOrderRow(b.closest("tr"));
 });
 document.getElementById("orderList").addEventListener("input", e => {
   if (e.target.matches("input[data-f]")) e.target.closest("tr").classList.add("dirty");
@@ -1466,7 +1489,7 @@ async function loadFromD1(){
     setStatus("讀取失敗:"+e.message+"。網路正常的話,稍後再按「重新讀取」。");
   }
 }
-function applyRows(rows){
+function applyRows(rows, keepFilter){
   allOrders = rowsToOrders(rows);
   hasDateColumn = allOrders.some(o => parseDateParts(o.date));
   const filterRow = document.getElementById("dateFilterRow");
@@ -1478,7 +1501,7 @@ function applyRows(rows){
       const t = todayParts();
       filterDateInput.value = t.y+"-"+String(t.m).padStart(2,"0")+"-"+String(t.d).padStart(2,"0");
     }
-    todayOnlyCb.checked = true;
+    if (!keepFilter) todayOnlyCb.checked = true;
   } else {
     todayOnlyCb.checked = false;
   }
