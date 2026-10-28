@@ -185,6 +185,17 @@
   input[type=range]{width:100%;accent-color:var(--gold);background:transparent}
   .sim-check{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted);margin-top:6px}
   .sim-check input{width:auto}
+  .param-table{width:100%;border-collapse:collapse;font-size:13px}
+  .param-table th{color:var(--muted);font-weight:700;text-align:left;padding:4px 4px 6px}
+  .param-table td{padding:3px 4px}
+  .param-table input{width:100%;padding:6px 8px;font-size:13px}
+  .param-table th:nth-child(2),.param-table th:nth-child(3),.param-table td:nth-child(2),.param-table td:nth-child(3){width:64px}
+  .param-table td:last-child,.param-table th:last-child{width:34px;text-align:center}
+  .param-del{background:none;border:0;color:var(--muted);cursor:pointer;font-size:16px;padding:0 4px}
+  .param-del:hover{color:var(--danger)}
+  .param-actions{display:flex;align-items:center;gap:8px;margin-top:10px}
+  .param-msg{font-size:12px;color:var(--muted)}
+  .param-msg.err{color:var(--danger)}
   .pill-toggle{display:inline-flex;align-items:center;gap:8px;cursor:pointer;user-select:none;margin-top:10px}
   .pill-toggle input{position:absolute;opacity:0;width:0;height:0}
   .pill-toggle .track{width:38px;height:21px;flex:none;background:var(--panel2);border:1px solid var(--border);
@@ -336,6 +347,19 @@
         </div>
       </div>
       <div class="sim-panel">
+        <div class="blk">
+          <details class="acc">
+            <summary>雷雕參數參考(功率 / 速度)</summary>
+            <div class="acc-body">
+              <div id="paramBox"><p class="hint" style="margin:0">打開時讀取…</p></div>
+              <div class="param-actions">
+                <button class="btn-sm" id="paramAdd" type="button">+ 新增一列</button>
+                <button class="btn-sm active" id="paramSave" type="button">儲存</button>
+                <span id="paramMsg" class="param-msg"></span>
+              </div>
+            </div>
+          </details>
+        </div>
         <div class="blk">
           <h3>模擬對象</h3>
           <div class="chiprow" id="simModeChips">
@@ -1416,7 +1440,7 @@ function renderOrderList(){
       + '<td class="nw">'+esc2(o.orderId)+'</td>'
       + '<td>'+(typeOfItem(o) ? '<span class="ol-type">'+esc2(typeOfItem(o))+'</span>' : '')+'</td>'
       + '<td class="item"><input data-f="item" value="'+esc2(o.item)+'" aria-label="品項"></td>'
-      + '<td><input data-f="text" value="'+esc2(engravingOf(o.item))+'" placeholder="沒填=換木片" aria-label="刻印文字"></td>'
+      + '<td><input data-f="text" value="'+esc2(engravingOf(o.item))+'" placeholder="沒填" aria-label="刻印文字"></td>'
       + '<td class="nw"><button class="btn-sm" data-act="save">存</button> <button class="btn-sm ol-del" data-act="del">刪除</button> <span class="ol-msg"></span></td>'
       + '</tr>').join("")
     + '</tbody></table>';
@@ -1475,6 +1499,61 @@ document.getElementById("orderList").addEventListener("input", e => {
 document.getElementById("orderList").addEventListener("keydown", e => {
   if (e.key === "Enter" && e.target.matches("input[data-f]")){ e.preventDefault(); saveOrderRow(e.target.closest("tr")); }
 });
+/* ── 雷雕參數參考表(功率/速度):可新增/修改/刪除,存在出貨小幫手的 D1(laser_params),每台電腦看到同一份 ── */
+const PARAM_DEFAULTS = [{name:"一對小 & 星座貓", power:"40", speed:"80"}, {name:"辦公室系列", power:"30", speed:"50"}];
+let paramLoaded = false;
+const paramEsc = v => String(v??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+function renderParamRows(rows){
+  document.getElementById("paramBox").innerHTML = '<table class="param-table"><thead><tr><th>商品</th><th>功率</th><th>速度</th><th></th></tr></thead><tbody>'
+    + rows.map(r => '<tr><td><input data-p="name" value="'+paramEsc(r.name)+'" aria-label="商品"></td>'
+      + '<td><input data-p="power" value="'+paramEsc(r.power)+'" inputmode="decimal" aria-label="功率"></td>'
+      + '<td><input data-p="speed" value="'+paramEsc(r.speed)+'" inputmode="decimal" aria-label="速度"></td>'
+      + '<td><button class="param-del" type="button" title="刪除這一列" aria-label="刪除這一列">×</button></td></tr>').join("")
+    + '</tbody></table>';
+}
+function readParamRows(){
+  return [...document.querySelectorAll("#paramBox tbody tr")].map(tr => ({
+    name: tr.querySelector('[data-p="name"]').value.trim(),
+    power: tr.querySelector('[data-p="power"]').value.trim(),
+    speed: tr.querySelector('[data-p="speed"]').value.trim()}));
+}
+function setParamMsg(msg, err){ const m = document.getElementById("paramMsg"); m.textContent = msg; m.className = "param-msg" + (err ? " err" : ""); }
+async function loadParams(){
+  setParamMsg("");
+  try{
+    const res = await fetch(LASER_API, {method:"POST", headers:{"Content-Type":"text/plain;charset=utf-8"}, body: JSON.stringify({action:"getLaserParams"})});
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error || "讀取失敗");
+    renderParamRows(data.rows); paramLoaded = true;
+  }catch(e){
+    renderParamRows(PARAM_DEFAULTS);   // 讀不到就先顯示預設值,仍可編輯;按儲存時才會寫回
+    setParamMsg("讀不到資料庫,先顯示預設值("+(e.message||e)+")", true);
+  }
+}
+async function saveParams(){
+  const rows = readParamRows().filter(r => r.name);
+  setParamMsg("儲存中…");
+  try{
+    const res = await fetch(LASER_API, {method:"POST", headers:{"Content-Type":"text/plain;charset=utf-8"}, body: JSON.stringify({action:"saveLaserParams", rows})});
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error || "儲存失敗");
+    renderParamRows(rows); paramLoaded = true;
+    setParamMsg("已儲存");
+  }catch(e){ setParamMsg("儲存失敗:"+(e.message||e), true); }
+}
+document.getElementById("paramAdd").addEventListener("click", () => {
+  const rows = readParamRows(); rows.push({name:"", power:"", speed:""});
+  renderParamRows(rows);
+  const last = document.querySelector("#paramBox tbody tr:last-child [data-p=name]"); if (last) last.focus();
+});
+document.getElementById("paramSave").addEventListener("click", saveParams);
+document.getElementById("paramBox").addEventListener("click", e => {
+  const b = e.target.closest(".param-del"); if (!b) return;
+  b.closest("tr").remove(); setParamMsg("還沒儲存(按「儲存」才會寫進資料庫)");
+});
+document.getElementById("paramBox").addEventListener("keydown", e => { if (e.key === "Enter" && e.target.matches("input")){ e.preventDefault(); saveParams(); } });
+document.querySelector("#page-simulate details.acc").addEventListener("toggle", function(){ if (this.open && !paramLoaded) loadParams(); });
+
 async function loadFromD1(){
   setStatus("讀取雷雕訂單中…");
   try{
