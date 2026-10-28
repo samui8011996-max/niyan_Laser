@@ -64,6 +64,12 @@
   .ol tr.dirty td{background:rgba(232,180,74,.08)}
   .ol .ol-msg{font-size:11px;color:var(--muted);white-space:nowrap}
   .ol .ol-msg.err{color:var(--danger)}
+  .ol-add{margin-top:12px;padding:12px;border:1px dashed var(--border);border-radius:10px}
+  .ol-add-title{font-size:12.5px;font-weight:600;color:var(--gold);margin-bottom:8px}
+  .ol-add-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+  .ol-add-row input{padding:6px 8px;font-size:12.5px}
+  .ol-add .ol-msg{font-size:11px;color:var(--muted)}
+  .ol-add .ol-msg.err{color:var(--danger)}
   .ol .ol-del{color:var(--danger);border-color:var(--danger)}
   input,select,textarea{background:var(--bg);border:1px solid var(--border);color:var(--text);
     border-radius:8px;padding:8px 10px;font-size:13px;outline:none;width:100%;font-family:inherit}
@@ -311,6 +317,20 @@
     </div>
     <p id="status"></p>
     <div id="orderList" class="ol-wrap"></div>
+    <!-- 自己新增一筆雷雕訂單(使用者 2026-10-28):存進同一個資料庫,所有電腦都看得到 -->
+    <div class="ol-add">
+      <div class="ol-add-title">＋ 新增雷雕項目</div>
+      <div class="ol-add-row">
+        <input type="date" id="addDate" aria-label="日期" style="width:auto">
+        <input id="addOrderId" placeholder="訂單編號(可不填)" aria-label="訂單編號" style="width:190px">
+        <input id="addItem" list="addItemList" placeholder="品項,例:【雷雕】胖胖貓一對(小) 顏色: 黃, 星座: 天蠍座 x1" aria-label="品項" style="flex:1;min-width:260px">
+        <datalist id="addItemList"></datalist>
+        <input id="addText" placeholder="刻印文字" aria-label="刻印文字" style="width:160px">
+        <button class="btn-sm" id="addBtn" type="button">新增</button>
+        <span class="ol-msg" id="addMsg"></span>
+      </div>
+      <div class="hint" style="margin:6px 0 0">品項可以從下拉選現有的樣式再改;星座、顏色、尺寸都寫在品項裡,類型會自動判斷。</div>
+    </div>
     <p id="missing"></p>
     </div>
   </details>
@@ -527,7 +547,7 @@
           <div class="blk">
             <label>落款(署名)</label>
             <div class="sizerow">
-              <input id="cardFrom" type="text" value="拿破崙" placeholder="例如:苡僑">
+              <input id="cardFrom" type="text" value="王小明" placeholder="例如:苡僑">
               <input id="cardFromSize" type="number" value="8" min="2" max="30" step="0.5">
               <span class="u">mm</span>
             </div>
@@ -1431,6 +1451,9 @@ function typeOfItem(o){
 function renderOrderList(){
   const box = document.getElementById("orderList");
   if (!box) return;
+  fillAddItemList();
+  const ad = document.getElementById("addDate"), fd = document.getElementById("filterDate");
+  if (ad && !ad.value && fd && fd.value) ad.value = fd.value;   // 新增的日期預設跟上面篩選同一天
   const list = d1Visible();
   if (!list.length){ box.innerHTML = ""; return; }
   const esc2 = t => String(t??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
@@ -1487,6 +1510,49 @@ async function deleteOrderRow(tr){
     msg.className = "ol-msg err"; msg.textContent = e.message;
   }
 }
+/* 新增一筆:鍵值用 manual|時間戳,不會跟出貨小幫手上傳的(商品訂單編號)撞到 */
+function fillAddItemList(){
+  const dl = document.getElementById("addItemList");
+  if (!dl) return;
+  const seen = new Set();
+  d1Orders.forEach(o => {
+    const base = withEngraving(o.item, "");   // 拿掉刻印文字,只留樣式
+    if (base) seen.add(base);
+  });
+  dl.innerHTML = [...seen].map(v => '<option value="'+v.replace(/&/g,"&amp;").replace(/"/g,"&quot;").replace(/</g,"&lt;")+'">').join("");
+}
+async function addOrderRow(){
+  const msg = document.getElementById("addMsg");
+  const dateIn = document.getElementById("addDate");
+  const itemRaw = document.getElementById("addItem").value.trim();
+  const text = document.getElementById("addText").value.trim();
+  const orderId = document.getElementById("addOrderId").value.trim();
+  if (!itemRaw){ msg.className = "ol-msg err"; msg.textContent = "請填品項"; return; }
+  if (!dateIn.value){ const t = todayParts(); dateIn.value = t.y+"-"+String(t.m).padStart(2,"0")+"-"+String(t.d).padStart(2,"0"); }
+  let item = withEngraving(itemRaw, text);
+  if (!/[xX×]\d+\s*$/.test(item)) item += " x1";   // 沒寫數量就當 1 個
+  const o = {key: "manual|"+Date.now(), orderId: orderId || "手動新增", item, text, date: dateIn.value.replace(/-/g,"/")};
+  o.type = typeOfItem(o);
+  msg.className = "ol-msg"; msg.textContent = "新增中…";
+  try{
+    const res = await fetch(LASER_API, {method:"POST", headers:{"Content-Type":"text/plain;charset=utf-8"},
+      body: JSON.stringify({action:"addLaserOrders", rows:[o]})});
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error || "新增失敗");
+    d1Orders.push(o);
+    applyD1Orders(true);
+    document.getElementById("addItem").value = "";
+    document.getElementById("addText").value = "";
+    document.getElementById("addOrderId").value = "";
+    msg.textContent = "已新增" + (o.type ? " " + o.type : "(類型判斷不出來,檢查品項寫法)");
+  }catch(e){
+    msg.className = "ol-msg err"; msg.textContent = e.message;
+  }
+}
+document.getElementById("addBtn").addEventListener("click", addOrderRow);
+document.querySelector(".ol-add").addEventListener("keydown", e => {
+  if (e.key === "Enter" && e.target.matches("input:not([type=date])")){ e.preventDefault(); addOrderRow(); }
+});
 document.getElementById("orderList").addEventListener("click", e => {
   const b = e.target.closest("button[data-act]");
   if (!b) return;
