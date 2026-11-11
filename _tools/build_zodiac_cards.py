@@ -67,7 +67,9 @@ for fn, cols, rows, names, kind in SRC:
 # 卡面 90x54mm 不變,中間內容(符號+字)整體縮成寬 40mm 置中:卡大字小比較好看,
 # 雷雕機框選範圍也就是整張卡片(畫布),對位比較好對。
 FRONT_W = 450   # 單位 = 0.1mm:正面 45mm(符號+客人文字+底線+英文祝賀語)
-BACK_W = 550    # 背面 55mm(中文字+Scent 要大一點才刻得清楚)
+BACK_W = 550    # 背面 55mm(中文字要大一點才刻得清楚)
+# 注意:2026-11-11 起商品不附香氛,default-zodiac-cards.js 的背面已手動刪掉最下面的 Scent 那行並重新置中;
+# 重跑這支腳本會把 Scent 加回來,要再刪一次(或先把 12ZODIC 原稿裡的 Scent 拿掉)
 BOLD_MM = 0.15   # 粗體:每條筆畫外擴的總粗度(mm),網站預設開啟,可在卡片上取消
 # uniform scale per side so type sizes match across all 12 cards (card = 900x540 units, 10 units per mm)
 out = {}

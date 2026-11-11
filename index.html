@@ -67,7 +67,8 @@
   .ol-add{margin-top:12px;padding:12px;border:1px dashed var(--border);border-radius:10px}
   .ol-add-title{font-size:12.5px;font-weight:600;color:var(--gold);margin-bottom:8px}
   .ol-add-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
-  .ol-add-row input{padding:6px 8px;font-size:12.5px}
+  .ol-add-row input,.ol-add-row select{padding:6px 8px;font-size:12.5px}
+  #addPreview{color:var(--text);margin-left:6px}
   .ol-add .ol-msg{font-size:11px;color:var(--muted)}
   .ol-add .ol-msg.err{color:var(--danger)}
   .ol .ol-del{color:var(--danger);border-color:var(--danger)}
@@ -322,14 +323,15 @@
       <div class="ol-add-title">＋ 新增雷雕項目</div>
       <div class="ol-add-row">
         <input type="date" id="addDate" aria-label="日期" style="width:auto">
-        <input id="addOrderId" placeholder="訂單編號(可不填)" aria-label="訂單編號" style="width:190px">
-        <input id="addItem" list="addItemList" placeholder="品項,例:【雷雕】胖胖貓一對(小) 顏色: 黃, 星座: 天蠍座 x1" aria-label="品項" style="flex:1;min-width:260px">
-        <datalist id="addItemList"></datalist>
-        <input id="addText" placeholder="刻印文字" aria-label="刻印文字" style="width:160px">
+        <input id="addOrderId" placeholder="訂單編號(可不填)" aria-label="訂單編號" style="width:170px">
+        <select id="addProduct" aria-label="品項" style="width:auto"></select>
+        <span id="addFields" class="ol-add-row"></span>
+        <input id="addText" placeholder="刻印文字" aria-label="刻印文字" style="width:150px">
+        <span style="display:inline-flex;width:112px"><input id="addQty" type="number" min="1" value="1" aria-label="數量" title="數量"></span>
         <button class="btn-sm" id="addBtn" type="button">新增</button>
         <span class="ol-msg" id="addMsg"></span>
       </div>
-      <div class="hint" style="margin:6px 0 0">品項可以從下拉選現有的樣式再改;星座、顏色、尺寸都寫在品項裡,類型會自動判斷。</div>
+      <div class="hint" style="margin:6px 0 0">先選品項,再選顏色、星座、圖案;品項文字跟類型會自動組好。<span id="addPreview"></span></div>
     </div>
     <p id="missing"></p>
     </div>
@@ -788,7 +790,7 @@ function parseNote(note){
   zodiac = zodiac.replace(/[(（][^)）]*[)）]/g, "").replace(/\s*-\s*$/, "").trim();   // 空的刻印欄留下的「 -」不要
   /* 辦公室款用「刻印圖案」指定要套哪一張樣板(無圖案 / 財富自由 / 提早退休…) */
   const pattern = (cleanNote.match(/刻印圖案[:：]\s*([^,，\/]+?)\s*(?=[,，\/]|\s\S+[:：]|$)/)||[])[1]?.trim() || "";
-  let color = (cleanNote.match(/顏色[:：]\s*(.+?)\s*(?=[,，]|星座|$)/)||[])[1]?.trim() || "";
+  let color = (cleanNote.match(/顏色[:：]\s*(.+?)\s*(?=[,，]|星座|刻印文字|$)/)||[])[1]?.trim() || "";
   /* 對貓款是兩隻一組,顏色分開寫成「金運: ◯◯, 招福: ◯◯」,兩個值分開存,
      檔名要用到單獨的金運色/招福色,不能只留合併顯示用的 color 字串。 */
   let colorPrimary = "", colorSecondary = "";
@@ -830,7 +832,7 @@ const FILENAME_RULES = {
 };
 /* ── 星座小卡(星座胖胖貓×永生花玻璃球附贈的 90×54mm 雙面雷雕小卡) ──────────────
    正面:星座符號＋客人刻印文字(英文名字或生日,限 10 字)＋底線＋英文祝賀語
-   背面:星座名＋中文祝賀語＋Scent 香氣(每個星座固定,不隨訂單變動)
+   背面:星座名＋中文祝賀語(每個星座固定,不隨訂單變動;2026-11-11 起商品不附香氛,Scent 那行拿掉了)
    素材在 default-zodiac-cards.js(由 _tools/build_zodiac_cards.py 從 12ZODIC 資料夾產生),
    座標系統 900×540(10 單位=1mm)。每筆訂單會生成「正面」「背面」兩張結果。 */
 const CARD_PRODUCT_KEYWORD = "玻璃球";
@@ -839,10 +841,11 @@ const CARD_MAX_CHARS = 10;
 const CARD_PX = {w:340.16, h:204.09}; // 90×54mm 以 96dpi 換算的像素
 const ZODIAC_ALIAS = {"摩羯座":"魔羯座","白羊座":"牡羊座","天平座":"天秤座"};
 function isCardProduct(rowText){ return String(rowText||"").includes(CARD_PRODUCT_KEYWORD); }
-function cardZodiacKey(o){
+function cardZodiacKey(o, rowText){
   if (typeof ZODIAC_CARDS === "undefined") return "";
-  /* 星座欄位優先;沒有就從「刻印圖案: 天秤座x玫瑰天竺葵」前半段抓 */
-  const cands = [o.zodiac, (String(o.pattern||"").match(/([^\sxX×]+座)/)||[])[1]];
+  /* 星座欄位優先;沒有就從「刻印圖案: 天秤座x玫瑰天竺葵」前半段抓;再沒有就從整列文字(規格「櫻花粉 ♈ 牡羊座」)找星座名 */
+  const cands = [o.zodiac, (String(o.pattern||"").match(/([^\sxX×]+座)/)||[])[1],
+                 ...(String(rowText||"").match(/[一-鿿]{2}座/g)||[]).filter(z => z !== "星座")];
   for (const c of cands){
     if (!c) continue;
     const k = ZODIAC_ALIAS[c] || c;
@@ -947,6 +950,9 @@ function rowsToOrders(rows){
     const cells = row.map(c => String(c ?? ""));
     const noteCell = colMap.note != null ? cells[colMap.note] : cells.find(c => c.includes("刻印文字"));
     const parsed = parseNote(noteCell || "");
+    /* 小卡訂單沒有「星座:」欄位,星座寫在規格裡(「櫻花粉 ♈ 牡羊座」)或「刻印圖案: 天秤座x玫瑰天竺葵」,
+       先補上星座,下面才不會因為沒文字/星座被濾掉,檔名跟卡片也用得到 */
+    if (parsed && !parsed.zodiac && isCardProduct(cells.join(" "))) parsed.zodiac = cardZodiacKey(parsed, cells.join(" "));
     /* 木片款(款式=雷雕,但故意沒填刻印文字)沒有文字/星座/圖案,但有顏色,
        這代表使用者仍然是想要下一筆訂單(等著出木片),不能被這裡的判斷濾掉。 */
     if (!parsed || (!parsed.text && !parsed.zodiac && !parsed.pattern && !parsed.color)) return;
@@ -959,8 +965,6 @@ function rowsToOrders(rows){
     /* 辦公室系列(整張樣板)如果連圖案跟文字都沒填,只有顏色,代表客人還沒決定
        要刻什麼,刻出來會是一張空白貓,沒有意義,直接不產生這一筆結果。 */
     if (item && !parsed.text && !parsed.pattern) return;
-    /* 小卡訂單常只有「刻印圖案: 天秤座x玫瑰天竺葵」沒有獨立星座欄位,補上星座讓檔名跟卡片顯示用得到 */
-    if (isCardProduct(rowText) && !parsed.zodiac) parsed.zodiac = cardZodiacKey(parsed);
     const fnCategory = fnCategoryFor(rowText, item ? item.key : "", parsed);
     out.push({id:i+"-"+(orderId||parsed.text), name:name.trim(), orderId:orderId.trim(), date,
               template: item ? item.key : "", fnCategory, fnSize: sizeTagFromText(rowText), ...parsed});
@@ -1451,7 +1455,7 @@ function typeOfItem(o){
 function renderOrderList(){
   const box = document.getElementById("orderList");
   if (!box) return;
-  fillAddItemList();
+  renderAddFields();   // 重抓星座/圖案選項(步驟①新上傳的素材也選得到),已選的值保留
   const ad = document.getElementById("addDate"), fd = document.getElementById("filterDate");
   if (ad && !ad.value && fd && fd.value) ad.value = fd.value;   // 新增的日期預設跟上面篩選同一天
   const list = d1Visible();
@@ -1510,27 +1514,77 @@ async function deleteOrderRow(tr){
     msg.className = "ol-msg err"; msg.textContent = e.message;
   }
 }
-/* 新增一筆:鍵值用 manual|時間戳,不會跟出貨小幫手上傳的(商品訂單編號)撞到 */
-function fillAddItemList(){
-  const dl = document.getElementById("addItemList");
-  if (!dl) return;
-  const seen = new Set();
-  d1Orders.forEach(o => {
-    const base = withEngraving(o.item, "");   // 拿掉刻印文字,只留樣式
-    if (base) seen.add(base);
+/* 新增一筆:先選品項,再用下拉選顏色/星座/圖案(使用者 2026-11-11:不要自己照範例打字)。
+   每個品項組出來的品項文字跟出貨小幫手送來的寫法一樣,rowsToOrders/fnCategoryFor 才認得。
+   星座/圖案選項直接讀素材庫、辦公室樣板、小卡素材,之後加新素材選單就會跟著多。
+   要再加新品項,在 ADD_PRODUCTS 加一筆就好。鍵值用 manual|時間戳,不會跟出貨小幫手上傳的撞到。 */
+const ADD_COLORS = ["黃","粉","綠","灰","黑","白"];
+const ADD_SIZES = ["小","中","大"];
+const isZodiacName = n => /座$/.test(n);
+const addIconNames = () => Object.keys(library).filter(n => !n.startsWith("辦公室")).sort((a,b) => isZodiacName(b) - isZodiacName(a) || a.localeCompare(b, "zh-Hant"));
+const addZodiacNames = () => addIconNames().filter(isZodiacName);
+const addCardZodiacs = () => typeof ZODIAC_CARDS !== "undefined" ? Object.keys(ZODIAC_CARDS) : [];
+const addPatterns = prefix => templateNames(prefix).map(n => n.slice(prefix.length));
+const ADD_PRODUCTS = [
+  {label:"星座貓雷雕", fields:[{k:"zodiac", label:"星座", opts:addZodiacNames}],
+   build: v => "【貓客製雷雕】星座貓 星座: "+v.zodiac},
+  {label:"胖胖貓一對", fields:[{k:"size", label:"尺寸", opts:() => ADD_SIZES}, {k:"color", label:"顏色", opts:() => ADD_COLORS}, {k:"zodiac", label:"星座/圖案", opts:addIconNames}],
+   build: v => "【雷雕】胖胖貓一對("+v.size+") 顏色: "+v.color+", 星座: "+v.zodiac},
+  {label:"胖胖招財貓(沒填字=木片)", fields:[{k:"size", label:"尺寸", opts:() => ADD_SIZES}, {k:"color", label:"顏色", opts:() => ADD_COLORS}],
+   build: v => "【雷雕】胖胖招財貓("+v.size+") 顏色: "+v.color},
+  {label:"辦公室一對(中)", fields:[{k:"c1", label:"金運", opts:() => ADD_COLORS}, {k:"c2", label:"招福", opts:() => ADD_COLORS}, {k:"pattern", label:"圖案", def:DEFAULT_PATTERN, opts:() => addPatterns("辦公室一對_")}],
+   build: v => "【辦公室語錄】胖胖貓(中)一對【雷雕】 金運: "+v.c1+", 招福: "+v.c2+" 刻印圖案: "+v.pattern},
+  {label:"辦公室單隻(中)", fields:[{k:"kind", label:"款", opts:() => ["金運","招福"]}, {k:"color", label:"顏色", opts:() => ADD_COLORS}, {k:"pattern", label:"圖案", def:DEFAULT_PATTERN, opts:() => addPatterns("辦公室_")}],
+   build: v => "【辦公室語錄】胖胖貓(中)【雷雕】 "+v.kind+": "+v.color+" 刻印圖案: "+v.pattern},
+  {label:"星座小卡(永生花玻璃球)", fields:[{k:"zodiac", label:"星座", opts:addCardZodiacs}], maxText:CARD_MAX_CHARS,
+   build: v => "【送禮首選】星座開運胖胖貓X永生花玻璃球【花色自選】 星座: "+v.zodiac},
+];
+const addEsc = t => String(t).replace(/&/g,"&amp;").replace(/"/g,"&quot;").replace(/</g,"&lt;");
+function renderAddFields(){
+  const p = ADD_PRODUCTS[document.getElementById("addProduct").value];
+  if (!p) return;
+  const box = document.getElementById("addFields");
+  const prev = Object.fromEntries([...box.querySelectorAll("select")].map(s => [s.dataset.k, s.value]));
+  box.innerHTML = p.fields.map(f => {
+    const opts = f.opts();
+    return '<select data-k="'+f.k+'" aria-label="'+f.label+'" title="'+f.label+'" style="width:auto">'
+      + opts.map(o => '<option'+((prev[f.k] ?? f.def) === o ? ' selected' : '')+'>'+addEsc(o)+'</option>').join("") + '</select>';
+  }).join("");
+  const textIn = document.getElementById("addText");
+  if (p.maxText){ textIn.maxLength = p.maxText; textIn.placeholder = "刻印文字(最多 "+p.maxText+" 字)"; }
+  else { textIn.removeAttribute("maxlength"); textIn.placeholder = "刻印文字"; }
+  updateAddPreview();
+}
+function addItemFromForm(){
+  const p = ADD_PRODUCTS[document.getElementById("addProduct").value];
+  const v = Object.fromEntries([...document.querySelectorAll("#addFields select")].map(s => [s.dataset.k, s.value]));
+  if (p.fields.some(f => !v[f.k])) return "";
+  const qty = Math.max(1, parseInt(document.getElementById("addQty").value, 10) || 1);
+  return withEngraving(p.build(v), document.getElementById("addText").value.trim()) + " x" + qty;
+}
+function updateAddPreview(){
+  const item = addItemFromForm();
+  const type = item ? typeOfItem({date:"", orderId:"", item}) : "";
+  document.getElementById("addPreview").textContent = item ? "→ " + item + (type ? "  " + type : "") : "";
+}
+function initAddForm(){
+  const sel = document.getElementById("addProduct");
+  sel.innerHTML = ADD_PRODUCTS.map((p, i) => '<option value="'+i+'">'+addEsc(p.label)+'</option>').join("");
+  sel.addEventListener("change", renderAddFields);
+  ["addFields","addText","addQty"].forEach(id => {
+    document.getElementById(id).addEventListener("input", updateAddPreview);
+    document.getElementById(id).addEventListener("change", updateAddPreview);
   });
-  dl.innerHTML = [...seen].map(v => '<option value="'+v.replace(/&/g,"&amp;").replace(/"/g,"&quot;").replace(/</g,"&lt;")+'">').join("");
+  renderAddFields();
 }
 async function addOrderRow(){
   const msg = document.getElementById("addMsg");
   const dateIn = document.getElementById("addDate");
-  const itemRaw = document.getElementById("addItem").value.trim();
   const text = document.getElementById("addText").value.trim();
   const orderId = document.getElementById("addOrderId").value.trim();
-  if (!itemRaw){ msg.className = "ol-msg err"; msg.textContent = "請填品項"; return; }
+  const item = addItemFromForm();
+  if (!item){ msg.className = "ol-msg err"; msg.textContent = "這個品項還沒有可選的星座/圖案(到步驟①加素材)"; return; }
   if (!dateIn.value){ const t = todayParts(); dateIn.value = t.y+"-"+String(t.m).padStart(2,"0")+"-"+String(t.d).padStart(2,"0"); }
-  let item = withEngraving(itemRaw, text);
-  if (!/[xX×]\d+\s*$/.test(item)) item += " x1";   // 沒寫數量就當 1 個
   const o = {key: "manual|"+Date.now(), orderId: orderId || "手動新增", item, text, date: dateIn.value.replace(/-/g,"/")};
   o.type = typeOfItem(o);
   msg.className = "ol-msg"; msg.textContent = "新增中…";
@@ -1541,14 +1595,16 @@ async function addOrderRow(){
     if (!data.ok) throw new Error(data.error || "新增失敗");
     d1Orders.push(o);
     applyD1Orders(true);
-    document.getElementById("addItem").value = "";
     document.getElementById("addText").value = "";
     document.getElementById("addOrderId").value = "";
-    msg.textContent = "已新增" + (o.type ? " " + o.type : "(類型判斷不出來,檢查品項寫法)");
+    document.getElementById("addQty").value = "1";
+    updateAddPreview();
+    msg.textContent = "已新增" + (o.type ? " " + o.type : "");
   }catch(e){
     msg.className = "ol-msg err"; msg.textContent = e.message;
   }
 }
+initAddForm();
 document.getElementById("addBtn").addEventListener("click", addOrderRow);
 document.querySelector(".ol-add").addEventListener("keydown", e => {
   if (e.key === "Enter" && e.target.matches("input:not([type=date])")){ e.preventDefault(); addOrderRow(); }
