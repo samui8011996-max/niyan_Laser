@@ -845,7 +845,9 @@ function cardZodiacKey(o, rowText){
   if (typeof ZODIAC_CARDS === "undefined") return "";
   /* 星座欄位優先;沒有就從「刻印圖案: 天秤座x玫瑰天竺葵」前半段抓;再沒有就從整列文字(規格「櫻花粉 ♈ 牡羊座」)找星座名 */
   const cands = [o.zodiac, (String(o.pattern||"").match(/([^\sxX×]+座)/)||[])[1],
-                 ...(String(rowText||"").match(/[一-鿿]{2}座/g)||[]).filter(z => z !== "星座")];
+                 ...(String(rowText||"").match(/[一-鿿]{2}座/g)||[]).filter(z => z !== "星座"),
+                 /* 貓掌款不是星座,規格或刻印圖案寫到「貓掌」就算 */
+                 /貓掌/.test(String(o.pattern||"") + String(rowText||"")) ? "貓掌" : ""];
   for (const c of cands){
     if (!c) continue;
     const k = ZODIAC_ALIAS[c] || c;
@@ -1536,7 +1538,7 @@ const ADD_PRODUCTS = [
    build: v => "【辦公室語錄】胖胖貓(中)一對【雷雕】 金運: "+v.c1+", 招福: "+v.c2+" 刻印圖案: "+v.pattern},
   {label:"辦公室單隻(中)", fields:[{k:"kind", label:"款", opts:() => ["金運","招福"]}, {k:"color", label:"顏色", opts:() => ADD_COLORS}, {k:"pattern", label:"圖案", def:DEFAULT_PATTERN, opts:() => addPatterns("辦公室_")}],
    build: v => "【辦公室語錄】胖胖貓(中)【雷雕】 "+v.kind+": "+v.color+" 刻印圖案: "+v.pattern},
-  {label:"星座小卡(永生花玻璃球)", fields:[{k:"zodiac", label:"星座", opts:addCardZodiacs}], maxText:CARD_MAX_CHARS,
+  {label:"星座小卡(永生花玻璃球)", fields:[{k:"zodiac", label:"星座/圖案", opts:addCardZodiacs}], maxText:CARD_MAX_CHARS,
    build: v => "【送禮首選】星座開運胖胖貓X永生花玻璃球【花色自選】 星座: "+v.zodiac},
 ];
 const addEsc = t => String(t).replace(/&/g,"&amp;").replace(/"/g,"&quot;").replace(/</g,"&lt;");
