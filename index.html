@@ -282,6 +282,7 @@
   <button class="ptab active" data-page="generate">刻印產生</button>
   <button class="ptab" data-page="simulate">雷雕模擬</button>
   <button class="ptab" data-page="paper">紙品列印</button>
+  <a class="ptab" href="svg3d.html" target="_blank" rel="noopener" style="text-decoration:none">SVG 轉 3D ↗</a>
 </div>
 
 <main id="page-generate" class="page show">
@@ -2157,9 +2158,9 @@ document.querySelectorAll(".tab").forEach(btn => {
 });
 
 /* ── 頁面分頁切換(刻印產生 / 雷雕模擬) ── */
-document.querySelectorAll(".ptab").forEach(btn => {
+document.querySelectorAll(".ptab[data-page]").forEach(btn => {
   btn.addEventListener("click", () => {
-    document.querySelectorAll(".ptab").forEach(b => b.classList.remove("active"));
+    document.querySelectorAll(".ptab[data-page]").forEach(b => b.classList.remove("active"));
     btn.classList.add("active");
     const page = btn.dataset.page;
     document.getElementById("page-generate").classList.toggle("show", page === "generate");

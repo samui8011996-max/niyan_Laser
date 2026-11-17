@@ -9,6 +9,7 @@ if exist "%OUT%" rmdir /s /q "%OUT%"
 mkdir "%OUT%"
 
 copy /y index.html "%OUT%" >nul
+copy /y svg3d.html "%OUT%" >nul
 copy /y default-*.js "%OUT%" >nul
 copy /y favicon.png "%OUT%" >nul
 copy /y manifest.webmanifest "%OUT%" >nul

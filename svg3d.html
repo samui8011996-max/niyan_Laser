@@ -1,0 +1,915 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SVG 轉 3D</title>
+<link rel="icon" href="favicon.png">
+<style>
+  :root{
+    --bg:#1d1f23; --panel:#26292e; --line:#3a3e45; --fg:#e6e6e6; --dim:#9aa0a8;
+    --acc:#e8913a; --ok:#5cc28a; --bad:#e5604f; --input:#1a1c20;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);
+    font:13px/1.45 "Microsoft JhengHei","PingFang TC",system-ui,sans-serif}
+  #app{display:flex;height:100%}
+  #side{width:320px;flex:none;background:var(--panel);border-right:1px solid var(--line);
+    overflow:auto;padding:12px 14px 24px}
+  #view{flex:1;position:relative;min-width:0}
+  #view canvas{display:block}
+  h1{font-size:16px;margin:2px 0 10px}
+  h2{font-size:12px;color:var(--dim);font-weight:600;letter-spacing:.05em;margin:16px 0 6px;
+    border-top:1px solid var(--line);padding-top:12px}
+  label.row{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:5px 0}
+  label.row span{color:var(--dim)}
+  input[type=number],select,textarea{background:var(--input);color:var(--fg);border:1px solid var(--line);
+    border-radius:4px;padding:4px 6px;font:inherit}
+  input[type=number]{width:90px;text-align:right}
+  input.slider{width:100%;margin:0 0 6px;accent-color:var(--acc)}
+  .hidden + input.slider{display:none}
+  select{width:150px}
+  textarea{width:100%;height:64px;resize:vertical}
+  .chk{display:flex;align-items:center;gap:6px;margin:5px 0;color:var(--dim)}
+  .tabs{display:flex;gap:4px;margin-bottom:8px}
+  .tabs button,.btn{flex:1;background:var(--input);color:var(--fg);border:1px solid var(--line);
+    border-radius:4px;padding:6px 8px;cursor:pointer;font:inherit}
+  .tabs button.on{border-color:var(--acc);color:var(--acc)}
+  .btn.primary{background:var(--acc);border-color:var(--acc);color:#1d1f23;font-weight:700}
+  .btns{display:flex;gap:6px;margin-top:8px}
+  .drop{border:1px dashed var(--line);border-radius:6px;padding:14px;text-align:center;color:var(--dim);cursor:pointer}
+  .drop.hover{border-color:var(--acc);color:var(--acc)}
+  .hint{color:var(--dim);font-size:12px;margin:4px 0}
+  .hidden{display:none!important}
+  #stats{position:absolute;left:10px;bottom:10px;background:rgba(20,22,25,.85);border:1px solid var(--line);
+    border-radius:6px;padding:8px 10px;font-size:12px;line-height:1.6;pointer-events:none}
+  #stats b{color:var(--fg)} #stats .ok{color:var(--ok)} #stats .bad{color:var(--bad)}
+  #err{position:absolute;left:50%;top:56px;transform:translateX(-50%);background:var(--bad);color:#fff;
+    padding:6px 12px;border-radius:6px;max-width:80%}
+  #topbar{position:absolute;right:10px;top:10px;left:10px;display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px;pointer-events:none}
+  #topbar .grp{display:flex;gap:2px;pointer-events:auto}
+  #topbar .btn{flex:none;background:rgba(20,22,25,.85);padding:5px 9px}
+  #topbar .btn.on{border-color:var(--acc);color:var(--acc)}
+  @media (max-width:760px){
+    #app{flex-direction:column} #side{width:100%;height:50%;border-right:0;border-bottom:1px solid var(--line)}
+  }
+</style>
+<script src="https://cdn.jsdelivr.net/npm/clipper-lib@6.4.2/clipper.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/opentype.js/1.3.4/opentype.min.js"></script>
+<script src="default-fonts.js"></script>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+</head>
+<body>
+<div id="app">
+  <aside id="side">
+    <h1>SVG 轉 3D</h1>
+
+    <div class="tabs" id="srcTabs">
+      <button data-src="svg" class="on">SVG 檔</button>
+      <button data-src="text">文字 + 字型</button>
+    </div>
+
+    <div id="srcSvg">
+      <div class="drop" id="drop">拖曳 SVG 到這裡，或點一下選檔</div>
+      <input type="file" id="svgFile" accept=".svg,image/svg+xml" class="hidden">
+      <p class="hint">SVG 裡的 &lt;text&gt; 要先「建立外框 / 物件轉路徑」才讀得到。</p>
+    </div>
+
+    <div id="srcText" class="hidden">
+      <textarea id="txt">Taiwan needs science.
+Science needs women.</textarea>
+      <label class="row"><span>字型</span>
+        <select id="fontSel">
+          <option value="JF">jf 粉圓（圓體）</option>
+          <option value="MOBO">MOBO 粗體</option>
+          <option value="CHENYU">辰宇落雁（細手寫）</option>
+          <option value="WANWAN">灣灣（可愛，簡體）</option>
+        </select></label>
+      <label class="row"><span>對齊</span>
+        <select id="align"><option value="left">靠左</option><option value="center">置中</option><option value="right">靠右</option></select></label>
+      <label class="row"><span>行高 (倍)</span><input type="number" id="lineH" value="1.25" step="0.05"></label>
+      <label class="row"><span>字距 (em)</span><input type="number" id="track" value="0" step="0.01"></label>
+      <p class="hint" id="fontMsg">切到這頁時才會下載字型（每套約 5～10MB）。</p>
+    </div>
+
+    <h2>圖形</h2>
+    <label class="row"><span>圖形寬度 (mm)</span><input type="number" data-k="width" value="80" step="1"></label>
+    <label class="row"><span>曲線段長 (mm)</span><input type="number" data-k="segLen" value="0.4" step="0.05" min="0.05"></label>
+    <label class="row"><span>簡化容差 (mm)</span><input type="number" data-k="tol" value="0.01" step="0.005" min="0"></label>
+    <label class="chk"><input type="checkbox" data-k="stroke" checked>包含描邊（stroke 轉成實體）</label>
+    <label class="chk"><input type="checkbox" data-k="ignoreWhite" checked>忽略白色填色（背景框）</label>
+    <label class="chk"><input type="checkbox" data-k="mirror">左右鏡像（做印章用）</label>
+
+    <h2>布線</h2>
+    <label class="row"><span>樣式</span>
+      <select data-k="topo"><option value="simple">精簡（最少面）</option><option value="grid">均勻網格</option></select></label>
+    <label class="row hidden" id="rowGrid"><span>網格大小 (mm)</span><input type="number" data-k="grid" value="0.5" step="0.1" min="0.05"></label>
+
+    <h2>模式</h2>
+    <div class="tabs" id="modeTabs">
+      <button data-mode="extrude" class="on">擠出</button>
+      <button data-mode="cut">方塊打洞</button>
+      <button data-mode="emboss">方塊浮雕</button>
+    </div>
+    <label class="row" id="rowH"><span>擠出高度 (mm)</span><input type="number" data-k="height" value="3" step="0.1" min="0.1" data-slider="0.2,30"></label>
+    <div id="blockOpts" class="hidden">
+      <label class="row"><span>方塊厚度 (mm)</span><input type="number" data-k="thick" value="10" step="0.1" min="0.1" data-slider="0.5,50"></label>
+      <label class="row" id="rowDepth"><span>打洞深度 (mm)</span><input type="number" data-k="depth" value="3" step="0.1" min="0.1" data-slider="0.1,50"></label>
+      <label class="row"><span>邊距 (mm)</span><input type="number" data-k="margin" value="5" step="0.5" min="0.3"></label>
+      <label class="row"><span>方塊寬 (mm，0=自動)</span><input type="number" data-k="blockW" value="0" step="1" min="0"></label>
+      <label class="row"><span>方塊深 (mm，0=自動)</span><input type="number" data-k="blockH" value="0" step="1" min="0"></label>
+      <p class="hint" id="cutHint">深度 ≥ 厚度就是貫穿（鏤空）。貫穿時字母裡的「島」（如 o、e 的中心）會掉出來。</p>
+    </div>
+
+    <h2>匯出</h2>
+    <div class="btns">
+      <button class="btn primary" id="dlStl">下載 STL</button>
+      <button class="btn" id="dlObj">下載 OBJ</button>
+    </div>
+    <p class="hint">STL：Z 軸朝上，單位 mm，給切片軟體。<br>OBJ：側牆保留四邊面、Y 軸朝上，Blender 預設匯入即為正向。</p>
+  </aside>
+
+  <main id="view">
+    <div id="topbar">
+      <div class="grp" id="viewBtns">
+        <button class="btn" data-view="front" title="數字鍵 1">前</button>
+        <button class="btn" data-view="back" title="Ctrl + 1">後</button>
+        <button class="btn" data-view="left" title="Ctrl + 3">左</button>
+        <button class="btn" data-view="right" title="數字鍵 3">右</button>
+        <button class="btn" data-view="top" title="數字鍵 7">上</button>
+        <button class="btn" data-view="bottom" title="Ctrl + 7">下</button>
+      </div>
+      <div class="grp">
+        <button class="btn" id="orthoBtn" title="數字鍵 5">透視</button>
+        <button class="btn" id="wireBtn">布線：開</button>
+        <button class="btn" id="fitBtn" title="Home 或雙擊畫面">置中</button>
+      </div>
+    </div>
+    <div id="stats"></div>
+    <div id="err" class="hidden"></div>
+  </main>
+</div>
+
+<script>
+// ==== CORE START ====
+// 純幾何：SVG 文字 → 乾淨、封閉（manifold）的多邊形網格。
+// 輸出 V = [x,y,z,...]（mm，Z 朝上），F = 面（三角形或四邊形，頂點索引，逆時針朝外）。
+function buildMesh(svgText, P, L) {
+  const { SVGLoader, ShapeUtils, Color, Vector2 } = L;
+  const C = L.ClipperLib;
+  const CS = 1000; // 1 單位 = 1µm（整數座標，布林運算才穩）
+
+  const data = new SVGLoader().parse(svgText);
+
+  const isWhite = c => { try { const k = new Color(c); return k.r > .94 && k.g > .94 && k.b > .94; } catch (e) { return false; } };
+  const useFill = st => st.fill && st.fill !== 'none' && st.fill !== 'transparent' &&
+    !(P.ignoreWhite && isWhite(st.fill)) && !(st.fillOpacity === 0);
+  const useStroke = st => P.stroke && st.stroke && st.stroke !== 'none' && st.stroke !== 'transparent' &&
+    st.strokeWidth > 0 && !(st.strokeOpacity === 0);
+
+  const items = [];
+  for (const sp of data.paths) {
+    const st = (sp.userData && sp.userData.style) || {};
+    const subs = sp.subPaths.filter(s => s.curves.length);
+    const f = useFill(st), s = useStroke(st);
+    if (subs.length && (f || s)) items.push({ st, subs, f, s });
+  }
+  if (!items.length) throw new Error('SVG 裡找不到可用的路徑（文字要先轉外框）');
+
+  // 先粗略取 bbox 決定縮放
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const it of items) for (const sub of it.subs) for (const p of sub.getPoints(12)) {
+    const pad = it.s ? it.st.strokeWidth / 2 : 0;
+    x0 = Math.min(x0, p.x - pad); x1 = Math.max(x1, p.x + pad);
+    y0 = Math.min(y0, p.y - pad); y1 = Math.max(y1, p.y + pad);
+  }
+  const bw = x1 - x0;
+  if (!(bw > 0)) throw new Error('圖形寬度為 0');
+  const sc = P.width > 0 ? P.width / bw : 1;
+  const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2, mx = P.mirror ? -1 : 1;
+  const segSvg = Math.max(P.segLen, 0.02) / sc;
+  const tf = (x, y) => ({ X: Math.round((x - cx) * sc * mx * CS), Y: Math.round(-(y - cy) * sc * CS) });
+
+  // 曲線依長度自適應取樣；直線只留端點
+  function sample(sub) {
+    const out = [];
+    const push = p => { const q = tf(p.x, p.y), l = out[out.length - 1]; if (!l || l.X !== q.X || l.Y !== q.Y) out.push(q); };
+    sub.curves.forEach((c, ci) => {
+      let n = 1;
+      if (!c.isLineCurve) {
+        n = Math.ceil(c.getLength() / segSvg);
+        n = Math.max(c.isEllipseCurve ? 8 : 2, Math.min(n, 1000));
+      }
+      for (let i = (ci === 0 ? 0 : 1); i <= n; i++) push(c.getPoint(i / n));
+    });
+    if (out.length > 1) { const a = out[0], b = out[out.length - 1]; if (a.X === b.X && a.Y === b.Y) out.pop(); }
+    return out;
+  }
+
+  const runUnion = (paths, ft) => {
+    const c = new C.Clipper(); c.AddPaths(paths, C.PolyType.ptSubject, true);
+    const sol = new C.Paths(); c.Execute(C.ClipType.ctUnion, sol, ft, ft); return sol;
+  };
+
+  let all = [];
+  for (const it of items) {
+    const pts = it.subs.map(sample);
+    if (it.f) {
+      const closed = pts.filter(p => p.length >= 3);
+      const ft = it.st.fillRule === 'evenodd' ? C.PolyFillType.pftEvenOdd : C.PolyFillType.pftNonZero;
+      if (closed.length) all = all.concat(runUnion(closed, ft));
+    }
+    if (it.s) {
+      const co = new C.ClipperOffset(4, 0.01 * CS);
+      const lj = it.st.strokeLineJoin, lc = it.st.strokeLineCap;
+      const jt = lj === 'round' ? C.JoinType.jtRound : lj === 'bevel' ? C.JoinType.jtSquare : C.JoinType.jtMiter;
+      it.subs.forEach((sub, i) => {
+        const p = pts[i]; if (p.length < 2) return;
+        const first = sub.curves[0].getPoint(0), last = sub.curves[sub.curves.length - 1].getPoint(1);
+        const closed = sub.autoClose || first.distanceTo(last) < 1e-6;
+        const et = closed && p.length >= 3 ? C.EndType.etClosedLine :
+          lc === 'round' ? C.EndType.etOpenRound : lc === 'square' ? C.EndType.etOpenSquare : C.EndType.etOpenButt;
+        co.AddPath(p, jt, et);
+      });
+      const sol = new C.Paths();
+      co.Execute(sol, it.st.strokeWidth * sc / 2 * CS);
+      all = all.concat(sol);
+    }
+  }
+  all = runUnion(all, C.PolyFillType.pftNonZero);
+  if (P.tol > 0) all = C.Clipper.CleanPolygons(all, P.tol * CS);
+  all = all.filter(p => p.length >= 3 && Math.abs(C.Clipper.Area(p)) > 0.0005 * CS * CS);
+  if (!all.length) throw new Error('轉換後沒有任何面積（全是細線？試著勾選描邊）');
+
+  // 方塊外框
+  const mode = P.mode;
+  let rect = null, inner = null;
+  if (mode !== 'extrude') {
+    const b = C.Clipper.GetBounds(all);
+    const mcx = Math.round((b.left + b.right) / 2), mcy = Math.round((b.top + b.bottom) / 2);
+    const m = Math.max(P.margin, 0.3) * CS;
+    const W = P.blockW > 0 ? P.blockW * CS : (b.right - b.left) + 2 * m;
+    const H = P.blockH > 0 ? P.blockH * CS : (b.bottom - b.top) + 2 * m;
+    const R = (hw, hh) => [{ X: mcx - hw, Y: mcy - hh }, { X: mcx + hw, Y: mcy - hh }, { X: mcx + hw, Y: mcy + hh }, { X: mcx - hw, Y: mcy + hh }];
+    rect = R(Math.round(W / 2), Math.round(H / 2));               // 逆時針
+    const ins = 0.3 * CS;                                         // 圖形至少離邊 0.3mm
+    inner = R(Math.round(W / 2 - ins), Math.round(H / 2 - ins));
+  }
+
+  // 最終整理：嚴格簡單多邊形 + 巢狀樹
+  const cl = new C.Clipper(); cl.StrictlySimple = true;
+  cl.AddPaths(all, C.PolyType.ptSubject, true);
+  if (inner) cl.AddPath(inner, C.PolyType.ptClip, true);
+  const tree = new C.PolyTree();
+  cl.Execute(inner ? C.ClipType.ctIntersection : C.ClipType.ctUnion, tree, C.PolyFillType.pftNonZero, C.PolyFillType.pftNonZero);
+
+  // 走訪樹：外框逆時針、洞順時針
+  const orient = (c, ccw) => { if ((C.Clipper.Area(c) > 0) !== ccw) c.reverse(); return c; };
+  const sIslands = [], sContours = [], cIslands = [], roots = [];
+  function walk(node) {
+    const c = orient(node.Contour(), true);
+    const holes = node.Childs();
+    sIslands.push([c, holes.map(h => orient(h.Contour(), false))]);
+    sContours.push(c);
+    for (const h of holes) {
+      sContours.push(h.Contour());
+      const kids = h.Childs();
+      cIslands.push([h.Contour(), kids.map(k => orient(k.Contour(), true))]);
+      kids.forEach(walk);
+    }
+  }
+  tree.Childs().forEach(n => { roots.push(n); walk(n); });
+  if (!sIslands.length) throw new Error('圖形不在方塊範圍內');
+
+  // ---- 建網格 ----
+  const V = [], F = [], vmap = new Map();
+  // 建點時順便焊接：同高度、相距 ≤3µm 的點視為同一點（吸收布林運算的捨入誤差）
+  const WELD = 8, hash = new Map(), VI = [];
+  const vi = (p, z) => {
+    const k = p.X + ',' + p.Y + ',' + z; let i = vmap.get(k);
+    if (i !== undefined) return i;
+    const hx = Math.floor(p.X / 4), hy = Math.floor(p.Y / 4);
+    for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) {
+      const arr = hash.get((hx + dx) + ',' + (hy + dy) + ',' + z);
+      if (arr) for (const j of arr) if (Math.abs(VI[j * 2] - p.X) <= WELD && Math.abs(VI[j * 2 + 1] - p.Y) <= WELD) { vmap.set(k, j); return j; }
+    }
+    i = V.length / 3; V.push(p.X / CS, p.Y / CS, z); VI.push(p.X, p.Y); vmap.set(k, i);
+    const hk = hx + ',' + hy + ',' + z; let a = hash.get(hk); if (!a) hash.set(hk, a = []); a.push(i);
+    return i;
+  };
+  const F_push = F.push.bind(F);
+  F.push = (...fs) => { // 焊接後塌掉的點/面要拿掉
+    for (const f of fs) {
+      const o = [];
+      for (const v of f) if (o[o.length - 1] !== v) o.push(v);
+      while (o.length > 1 && o[0] === o[o.length - 1]) o.pop();
+      if (o.length >= 3) F_push(o);
+    }
+  };
+  const GRID = P.topo === 'grid';
+  const G = Math.max(20, Math.round((P.grid || 1) * CS));    // 網格間距（整數座標）
+  const onGrid = v => v % G === 0;
+
+  // 三角化：轉一個角度打破「很多點 X/Y 相同」造成 earcut 放棄的情況；
+  // earcut 丟掉的共線點插回所在邊上；三角形數不對就換角度重試。
+  const onSeg = (a, b, m) => {
+    if ((b.X - a.X) * (m.Y - a.Y) - (b.Y - a.Y) * (m.X - a.X) !== 0) return false;
+    const d = (m.X - a.X) * (b.X - a.X) + (m.Y - a.Y) * (b.Y - a.Y);
+    return d > 0 && d < (b.X - a.X) ** 2 + (b.Y - a.Y) ** 2;
+  };
+  function triangulate(outer, holes, flat) {
+    const want = flat.length + 2 * holes.length - 2;
+    let best = [];
+    for (const ang of [0.3719, 1.1173, 2.0461, 0.0613, 2.9012, 0]) {
+      const rc = Math.cos(ang), rs = Math.sin(ang);
+      const v2 = c => c.map(p => new Vector2(p.X * rc - p.Y * rs, p.X * rs + p.Y * rc));
+      let tris = ShapeUtils.triangulateShape(v2(outer), holes.map(v2));
+      const used = new Set(); tris.forEach(t => t.forEach(i => used.add(i)));
+      for (let m = 0; m < flat.length; m++) {
+        if (used.has(m)) continue;
+        const M = flat[m], nt = [];
+        for (const t of tris) {
+          let done = false;
+          for (let e = 0; e < 3 && !done; e++) {
+            const a = t[e], b = t[(e + 1) % 3], c = t[(e + 2) % 3];
+            if (onSeg(flat[a], flat[b], M)) { nt.push([a, m, c], [m, b, c]); done = true; }
+          }
+          if (!done) nt.push(t);
+        }
+        tris = nt;
+      }
+      if (tris.length === want) return tris;
+      if (tris.length > best.length) best = tris;
+    }
+    return best;
+  }
+  const dedup = r => {
+    const o = [];
+    for (const p of r) { const l = o[o.length - 1]; if (!l || l.X !== p.X || l.Y !== p.Y) o.push(p); }
+    while (o.length > 1 && o[0].X === o[o.length - 1].X && o[0].Y === o[o.length - 1].Y) o.pop();
+    return o;
+  };
+  function emitPoly(outer, holes, z, up) {
+    outer = dedup(outer); holes = holes.map(dedup).filter(h => h.length >= 3);
+    if (outer.length < 3) return;
+    const flat = outer.concat(...holes);
+    const tris = triangulate(outer, holes, flat);
+    let tot = 0;
+    for (const t of tris) {
+      const a = flat[t[0]], b = flat[t[1]], c = flat[t[2]];
+      tot += (b.X - a.X) * (c.Y - a.Y) - (b.Y - a.Y) * (c.X - a.X);
+    }
+    const flip = (tot > 0) !== up;
+    for (const t of tris) {
+      const ia = vi(flat[t[0]], z), ib = vi(flat[t[1]], z), ic = vi(flat[t[2]], z);
+      F.push(flip ? [ia, ic, ib] : [ia, ib, ic]);
+    }
+  }
+
+  // ---- 均勻網格 ----
+  // 1) 先把每條輪廓在跟格線相交處加點（點剛好落在格線上），牆和面都用這份輪廓
+  function splitGrid(c) {
+    // 離格線 ≤10µm 的點直接吸到格線上，避免「邊幾乎貼著格線」時布林運算的捨入誤差
+    const snap = v => { const g = Math.round(v / G) * G; return Math.abs(v - g) <= 10 ? g : v; };
+    for (let i = 0; i < c.length; i++) c[i] = { X: snap(c[i].X), Y: snap(c[i].Y) };
+    const s0 = dedup(c); c.length = 0; c.push(...s0);
+    const out = [], n = c.length;
+    for (let i = 0; i < n; i++) {
+      const a = c[i], b = c[(i + 1) % n], ts = [];
+      if (a.X !== b.X) {
+        const lo = Math.min(a.X, b.X), hi = Math.max(a.X, b.X);
+        for (let k = Math.floor(lo / G) + 1; k * G < hi; k++) {
+          const X = k * G, t = (X - a.X) / (b.X - a.X); ts.push([t, X, Math.round(a.Y + t * (b.Y - a.Y))]);
+        }
+      }
+      if (a.Y !== b.Y) {
+        const lo = Math.min(a.Y, b.Y), hi = Math.max(a.Y, b.Y);
+        for (let k = Math.floor(lo / G) + 1; k * G < hi; k++) {
+          const Y = k * G, t = (Y - a.Y) / (b.Y - a.Y); ts.push([t, Math.round(a.X + t * (b.X - a.X)), Y]);
+        }
+      }
+      ts.sort((u, v) => u[0] - v[0]);
+      out.push(a);
+      for (const [, X, Y] of ts) {
+        const l = out[out.length - 1];
+        if ((l.X !== X || l.Y !== Y) && (b.X !== X || b.Y !== Y)) out.push({ X, Y });
+      }
+    }
+    c.length = 0; for (const p of dedup(out)) c.push(p);
+  }
+  if (GRID) {
+    const est = (rect ? Math.abs(C.Clipper.Area(rect)) : sIslands.reduce((s, [o]) => s + Math.abs(C.Clipper.Area(o)), 0)) / (G * G);
+    if (est > 400000) throw new Error(`網格太密（約 ${Math.round(est / 1000)}k 格），請把網格大小調大`);
+    sContours.forEach(splitGrid);
+    if (rect) splitGrid(rect);
+  }
+  const box = (xa, ya, xb, yb) => [{ X: xa, Y: ya }, { X: xb, Y: ya }, { X: xb, Y: yb }, { X: xa, Y: yb }];
+  // 2) 逐列、逐格跟區域取交集；整格就輸出四邊面，邊緣格才三角化
+  function gridCap(outer, holes, z, up) {
+    const rings = [outer, ...holes], b = C.Clipper.GetBounds([outer]);
+    const i0 = Math.floor(b.left / G), i1 = Math.ceil(b.right / G);
+    const pieces = [];
+    for (let k = Math.floor(b.top / G); k < Math.ceil(b.bottom / G); k++) {
+      const ya = k * G, yb = ya + G;
+      const c1 = new C.Clipper(); c1.PreserveCollinear = true;
+      c1.AddPaths(rings, C.PolyType.ptSubject, true);
+      c1.AddPath(box(i0 * G, ya, i1 * G, yb), C.PolyType.ptClip, true);
+      const row = new C.Paths();
+      c1.Execute(C.ClipType.ctIntersection, row, C.PolyFillType.pftEvenOdd, C.PolyFillType.pftNonZero);
+      if (!row.length) continue;
+      const rb = C.Clipper.GetBounds(row);
+      for (let i = Math.floor(rb.left / G); i < Math.ceil(rb.right / G); i++) {
+        const c2 = new C.Clipper(); c2.PreserveCollinear = true;
+        c2.AddPaths(row, C.PolyType.ptSubject, true);
+        c2.AddPath(box(i * G, ya, i * G + G, yb), C.PolyType.ptClip, true);
+        const t = new C.PolyTree();
+        c2.Execute(C.ClipType.ctIntersection, t, C.PolyFillType.pftNonZero, C.PolyFillType.pftNonZero);
+        const wp = nd => { const hs = nd.Childs(); pieces.push([nd.Contour(), hs.map(h => h.Contour())]); hs.forEach(h => h.Childs().forEach(wp)); };
+        t.Childs().forEach(wp);
+      }
+    }
+    // 3) 合法的點只有兩種：輪廓點、格線交點。Clipper 捨入產生的偏移點 → 吸到最近的合法點，太遠就刪掉
+    const R = Math.min(30, G / 4), HC = 64, lh = new Map();
+    rings.forEach(r => r.forEach(p => {
+      const k = Math.floor(p.X / HC) + ',' + Math.floor(p.Y / HC); let a = lh.get(k); if (!a) lh.set(k, a = []); a.push(p);
+    }));
+    const snapP = p => {
+      let best = null, bd = R * R + 1;
+      const hx = Math.floor(p.X / HC), hy = Math.floor(p.Y / HC);
+      for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) {
+        const a = lh.get((hx + dx) + ',' + (hy + dy)); if (!a) continue;
+        for (const q of a) { const d = (q.X - p.X) ** 2 + (q.Y - p.Y) ** 2; if (d < bd) { bd = d; best = q; } }
+      }
+      if (bd === 0) return p;
+      const gx = Math.round(p.X / G) * G, gy = Math.round(p.Y / G) * G, gd = (gx - p.X) ** 2 + (gy - p.Y) ** 2;
+      if (gd < bd) { bd = gd; best = { X: gx, Y: gy }; }
+      return bd <= R * R ? best : null;
+    };
+    const keep = r => dedup(r.map(snapP).filter(Boolean));
+    for (const pc of pieces) { pc[0] = keep(pc[0]); pc[1] = pc[1].map(keep).filter(h => h.length >= 3); }
+    // 4) 修 T 接點：格線上的點若落在鄰格的邊中間，就插進那條邊
+    const mx = new Map(), my = new Map();
+    const add = (m, k, v) => { let s = m.get(k); if (!s) m.set(k, s = new Set()); s.add(v); };
+    for (const r of [...rings, ...pieces.flatMap(([o, hs]) => [o, ...hs])]) for (const p of r) {
+      if (onGrid(p.X)) add(mx, p.X, p.Y);
+      if (onGrid(p.Y)) add(my, p.Y, p.X);
+    }
+    const srt = m => { const r = new Map(); for (const [k, s] of m) r.set(k, [...s].sort((u, v) => u - v)); return r; };
+    const SX = srt(mx), SY = srt(my);
+    const fix = r => {
+      const out = [];
+      for (let i = 0, n = r.length; i < n; i++) {
+        const a = r[i], q = r[(i + 1) % n]; out.push(a);
+        let mids = null;
+        if (a.X === q.X && SX.has(a.X)) {
+          const lo = Math.min(a.Y, q.Y), hi = Math.max(a.Y, q.Y);
+          mids = SX.get(a.X).filter(y => y > lo && y < hi).map(y => ({ X: a.X, Y: y }));
+          if (q.Y < a.Y) mids.reverse();
+        } else if (a.Y === q.Y && SY.has(a.Y)) {
+          const lo = Math.min(a.X, q.X), hi = Math.max(a.X, q.X);
+          mids = SY.get(a.Y).filter(x => x > lo && x < hi).map(x => ({ X: x, Y: a.Y }));
+          if (q.X < a.X) mids.reverse();
+        }
+        if (mids) out.push(...mids);
+      }
+      return out;
+    };
+    for (const [o, hs] of pieces) {
+      const O = dedup(fix(o)), H = hs.map(h => dedup(fix(h)));
+      const ar = C.Clipper.Area(O);
+      if (!H.length && O.length === 4 && Math.abs(ar) === G * G) {
+        const q = O.map(p => vi(p, z)); if ((ar > 0) !== up) q.reverse(); F.push(q);
+      } else emitPoly(O, H, z, up);
+    }
+  }
+  const cap = (o, h, z, up) => GRID ? gridCap(o, h, z, up) : emitPoly(o, h, z, up);
+
+  function wall(c, z0, z1, outRight) {
+    const nz = GRID ? Math.max(1, Math.round((z1 - z0) * CS / G)) : 1;
+    const zs = []; for (let j = 0; j <= nz; j++) zs.push(j === nz ? z1 : z0 + (z1 - z0) * j / nz);
+    for (let i = 0, n = c.length; i < n; i++) {
+      const p = c[i], q = c[(i + 1) % n];
+      for (let j = 0; j < nz; j++) {
+        const a = vi(p, zs[j]), b = vi(q, zs[j]), d = vi(q, zs[j + 1]), e = vi(p, zs[j + 1]);
+        F.push(outRight ? [a, b, d, e] : [b, a, e, d]);
+      }
+    }
+  }
+  const topRegion = z => { // 方塊上表面 = 方塊 − 圖形
+    cap(rect, roots.map(n => n.Contour()), z, true);
+    cIslands.forEach(([o, h]) => cap(o, h, z, true));
+  };
+
+  let zmax;
+  if (mode === 'extrude') {
+    const h = P.height;
+    sIslands.forEach(([o, hs]) => { cap(o, hs, h, true); cap(o, hs, 0, false); });
+    sContours.forEach(c => wall(c, 0, h, true));
+    zmax = h;
+  } else if (mode === 'emboss') {
+    const T = P.thick, h = P.height;
+    topRegion(T);
+    sIslands.forEach(([o, hs]) => cap(o, hs, T + h, true));
+    sContours.forEach(c => wall(c, T, T + h, true));
+    wall(rect, 0, T, true); cap(rect, [], 0, false);
+    zmax = T + h;
+  } else { // cut
+    const T = P.thick, d = P.depth;
+    topRegion(T);
+    wall(rect, 0, T, true);
+    if (d >= T) { // 貫穿
+      sContours.forEach(c => wall(c, 0, T, false));
+      cap(rect, roots.map(n => n.Contour()), 0, false);
+      cIslands.forEach(([o, h]) => cap(o, h, 0, false));
+    } else {
+      const zf = T - d;
+      sIslands.forEach(([o, hs]) => cap(o, hs, zf, true));
+      sContours.forEach(c => wall(c, zf, T, false));
+      cap(rect, [], 0, false);
+    }
+    zmax = T;
+  }
+
+  // 封閉性檢查：每條有向邊恰好出現一次，且反向邊也恰好一次
+  const em = new Map();
+  for (const f of F) for (let i = 0; i < f.length; i++) {
+    const k = f[i] + '_' + f[(i + 1) % f.length]; em.set(k, (em.get(k) || 0) + 1);
+  }
+  let bad = 0;
+  for (const [k, v] of em) { const [a, b] = k.split('_'); if (v !== 1 || em.get(b + '_' + a) !== 1) bad++; }
+
+  let xs = [Infinity, -Infinity], ys = [Infinity, -Infinity];
+  for (let i = 0; i < V.length; i += 3) {
+    xs[0] = Math.min(xs[0], V[i]); xs[1] = Math.max(xs[1], V[i]);
+    ys[0] = Math.min(ys[0], V[i + 1]); ys[1] = Math.max(ys[1], V[i + 1]);
+  }
+  const quads = F.filter(f => f.length === 4).length;
+  return {
+    V, F,
+    stats: {
+      verts: V.length / 3, tris: F.length - quads, quads, triTotal: F.length + quads,
+      islands: sIslands.length, badEdges: bad,
+      size: [xs[1] - xs[0], ys[1] - ys[0], zmax]
+    }
+  };
+}
+
+function triangulateFaces(F) {
+  const T = [];
+  for (const f of F) for (let i = 1; i < f.length - 1; i++) T.push(f[0], f[i], f[i + 1]);
+  return T;
+}
+
+function toSTL(V, F) {
+  const T = triangulateFaces(F), n = T.length / 3;
+  const buf = new ArrayBuffer(84 + n * 50), dv = new DataView(buf);
+  dv.setUint32(80, n, true);
+  let o = 84;
+  for (let t = 0; t < T.length; t += 3) {
+    const a = T[t] * 3, b = T[t + 1] * 3, c = T[t + 2] * 3;
+    const ux = V[b] - V[a], uy = V[b + 1] - V[a + 1], uz = V[b + 2] - V[a + 2];
+    const wx = V[c] - V[a], wy = V[c + 1] - V[a + 1], wz = V[c + 2] - V[a + 2];
+    let nx = uy * wz - uz * wy, ny = uz * wx - ux * wz, nz = ux * wy - uy * wx;
+    const l = Math.hypot(nx, ny, nz) || 1;
+    for (const v of [nx / l, ny / l, nz / l]) { dv.setFloat32(o, v, true); o += 4; }
+    for (const i of [a, b, c]) for (let k = 0; k < 3; k++) { dv.setFloat32(o, V[i + k], true); o += 4; }
+    o += 2;
+  }
+  return buf;
+}
+
+function toOBJ(V, F) { // 轉成 Y 朝上：(x, y, z) → (x, z, -y)
+  const L = ['# svg-to-3d, units: mm'];
+  const r = x => +x.toFixed(4);
+  for (let i = 0; i < V.length; i += 3) L.push(`v ${r(V[i])} ${r(V[i + 2])} ${r(-V[i + 1])}`);
+  for (const f of F) L.push('f ' + f.map(i => i + 1).join(' '));
+  return L.join('\n') + '\n';
+}
+// ==== CORE END ====
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { SVGLoader } from 'three/addons/loaders/SVGLoader.js';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+const LIBS = { SVGLoader, ShapeUtils: THREE.ShapeUtils, Color: THREE.Color, Vector2: THREE.Vector2, ClipperLib: window.ClipperLib };
+const $ = s => document.querySelector(s);
+
+const SAMPLE = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 100">
+  <path d="M50 8 L62 38 L94 38 L68 57 L78 90 L50 70 L22 90 L32 57 L6 38 L38 38 Z"/>
+  <path fill-rule="evenodd" d="M150 12 a38 38 0 1 0 0.01 0 Z M150 30 a20 20 0 1 0 0.01 0 Z"/>
+  <path d="M135 50 h30" stroke="#000" stroke-width="6" stroke-linecap="round" fill="none"/>
+</svg>`;
+
+const state = { src: 'svg', mode: 'extrude', svgText: SAMPLE, name: 'sample', font: null, wire: true, mesh: null };
+
+// ---- three.js ----
+const view = $('#view');
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(devicePixelRatio);
+view.prepend(renderer.domElement);
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x2b2e33);
+const persp = new THREE.PerspectiveCamera(40, 1, 0.1, 100000);
+const ortho = new THREE.OrthographicCamera(-1, 1, 1, -1, -100000, 100000);
+let camera = persp;
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+scene.add(new THREE.HemisphereLight(0xffffff, 0x404048, 1.6));
+const dl = new THREE.DirectionalLight(0xffffff, 1.6); dl.position.set(1, 2, 1.5); scene.add(dl);
+const dl2 = new THREE.DirectionalLight(0xffffff, 0.5); dl2.position.set(-1.5, 0.5, -1); scene.add(dl2);
+const grid = new THREE.GridHelper(400, 40, 0x555a62, 0x3a3e45); scene.add(grid);
+const group = new THREE.Group(); group.rotation.x = -Math.PI / 2; scene.add(group); // Z-up → Y-up
+
+const mat = new THREE.MeshStandardMaterial({ color: 0xb8bcc4, roughness: .6, metalness: 0, flatShading: true,
+  polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 });
+const lineMat = new THREE.LineBasicMaterial({ color: 0x1b1d21, transparent: true, opacity: .55 });
+
+let orthoH = 50; // 正交相機半高（mm）
+function updateProj() {
+  const w = Math.max(1, view.clientWidth), h = Math.max(1, view.clientHeight), a = w / h;
+  persp.aspect = a; persp.updateProjectionMatrix();
+  ortho.left = -orthoH * a; ortho.right = orthoH * a; ortho.top = orthoH; ortho.bottom = -orthoH;
+  ortho.updateProjectionMatrix();
+}
+function resize() {
+  const w = view.clientWidth, h = view.clientHeight;
+  if (!w || !h) return;
+  renderer.setSize(w, h, false);
+  renderer.domElement.style.width = '100%'; renderer.domElement.style.height = '100%';
+  updateProj();
+}
+new ResizeObserver(resize).observe(view); resize();
+renderer.setAnimationLoop(() => { controls.update(); renderer.render(scene, camera); });
+
+// 模型中心與半徑（世界座標）
+function modelSphere() {
+  const box = new THREE.Box3().setFromObject(group);
+  if (box.isEmpty()) return { c: new THREE.Vector3(), r: 50 };
+  return { c: box.getCenter(new THREE.Vector3()), r: box.getSize(new THREE.Vector3()).length() / 2 || 10 };
+}
+let lastR = 0;
+// dir：相機從哪個方向看過去（世界座標，Y 朝上；模型的 Z 朝上 = 世界 Y）
+function look(dir) {
+  const { c, r } = modelSphere(); lastR = r;
+  const d = r / Math.sin(THREE.MathUtils.degToRad(persp.fov / 2)) * 1.05;
+  const v = dir.clone().normalize();
+  if (Math.abs(v.y) > 0.999) v.z += 1e-4 * Math.sign(v.y || 1); // 正上/正下方時避開萬向鎖，畫面上方 = 模型 +Y
+  camera.position.copy(c).addScaledVector(v.normalize(), d);
+  controls.target.copy(c);
+  orthoH = r * 1.08; ortho.zoom = 1; updateProj();
+  controls.minDistance = r * 0.05; controls.maxDistance = r * 30;
+  camera.lookAt(c); controls.update();
+}
+const ISO = new THREE.Vector3(0.6, 1.6, 2.0);
+function fit() { if (state.mesh) look(ISO); }
+
+function setOrtho(on) {
+  const next = on ? ortho : persp;
+  if (next === camera) return;
+  if (on) { // 讓正交畫面大小跟目前透視差不多
+    const dist = camera.position.distanceTo(controls.target);
+    orthoH = dist * Math.tan(THREE.MathUtils.degToRad(persp.fov / 2)); ortho.zoom = 1;
+  } else { // 正交縮放過的話，透視相機的距離跟著換算
+    const dist = (orthoH / ortho.zoom) / Math.tan(THREE.MathUtils.degToRad(persp.fov / 2));
+    const dir = camera.position.clone().sub(controls.target).normalize();
+    persp.position.copy(controls.target).addScaledVector(dir, dist);
+  }
+  if (on) next.position.copy(camera.position);
+  next.quaternion.copy(camera.quaternion);
+  camera = next; controls.object = camera; updateProj(); controls.update();
+  $('#orthoBtn').textContent = on ? '正交' : '透視';
+  $('#orthoBtn').classList.toggle('on', on);
+}
+
+// 六向視圖：模型座標 → 世界座標 (x, y, z) → (x, z, -y)
+const VIEWS = {
+  front: [new THREE.Vector3(0, 0, 1), '前 (−Y)'], back: [new THREE.Vector3(0, 0, -1), '後 (+Y)'],
+  right: [new THREE.Vector3(1, 0, 0), '右 (+X)'], left: [new THREE.Vector3(-1, 0, 0), '左 (−X)'],
+  top: [new THREE.Vector3(0, 1, 0), '上 (+Z)'], bottom: [new THREE.Vector3(0, -1, 0), '下 (−Z)'],
+};
+function setView(name) { setOrtho(true); look(VIEWS[name][0]); }
+
+function show(res) {
+  group.clear();
+  const { V, F } = res;
+  const idx = triangulateFaces(F);
+  const pos = new Float32Array(idx.length * 3);
+  idx.forEach((v, i) => { pos[i * 3] = V[v * 3]; pos[i * 3 + 1] = V[v * 3 + 1]; pos[i * 3 + 2] = V[v * 3 + 2]; });
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  g.computeVertexNormals();
+  group.add(new THREE.Mesh(g, mat));
+  // 畫真正的面邊界（四邊面不畫對角線）
+  const seen = new Set(), lp = [];
+  for (const f of F) for (let i = 0; i < f.length; i++) {
+    const a = f[i], b = f[(i + 1) % f.length], k = a < b ? a + '_' + b : b + '_' + a;
+    if (seen.has(k)) continue; seen.add(k);
+    lp.push(V[a * 3], V[a * 3 + 1], V[a * 3 + 2], V[b * 3], V[b * 3 + 1], V[b * 3 + 2]);
+  }
+  const lg = new THREE.BufferGeometry(); lg.setAttribute('position', new THREE.Float32BufferAttribute(lp, 3));
+  const lines = new THREE.LineSegments(lg, lineMat); lines.visible = state.wire; group.add(lines);
+  const s = res.stats;
+  $('#stats').innerHTML =
+    `尺寸 <b>${s.size.map(v => v.toFixed(1)).join(' × ')}</b> mm<br>` +
+    `頂點 <b>${s.verts}</b>　三角面 <b>${s.tris}</b>　四邊面 <b>${s.quads}</b><br>` +
+    `獨立實體 <b>${s.islands}</b>　` +
+    (s.badEdges ? `<span class="bad">非封閉邊 ${s.badEdges}</span>` : `<span class="ok">✔ 封閉（watertight）</span>`);
+}
+
+// 深度 / 高度 / 厚度：數字框下面加一條拉桿，拖曳即時調整
+document.querySelectorAll('input[data-slider]').forEach(num => {
+  const [mn, mx] = num.dataset.slider.split(',').map(Number);
+  const rg = document.createElement('input');
+  Object.assign(rg, { type: 'range', min: mn, max: mx, step: 0.1, value: num.value, className: 'slider' });
+  num.closest('label').after(rg);
+  rg.addEventListener('input', () => { num.value = rg.value; num.dispatchEvent(new Event('input')); });
+  num.addEventListener('input', () => { rg.value = num.value; });
+});
+
+// ---- 參數 / 重建 ----
+function params() {
+  const P = { mode: state.mode };
+  document.querySelectorAll('[data-k]').forEach(el => {
+    P[el.dataset.k] = el.type === 'checkbox' ? el.checked : el.tagName === 'SELECT' ? el.value : parseFloat(el.value) || 0;
+  });
+  $('#rowGrid').classList.toggle('hidden', P.topo !== 'grid');
+  return P;
+}
+
+function textSvg() {
+  const f = state.font; if (!f) return null;
+  const size = 100, lh = parseFloat($('#lineH').value) || 1.25, tr = (parseFloat($('#track').value) || 0) * size;
+  const align = $('#align').value;
+  const lines = $('#txt').value.split('\n');
+  const glyphLine = (line, x, y) => { // 支援字距：逐字排
+    let d = '', cx = x;
+    const glyphs = f.stringToGlyphs(line);
+    glyphs.forEach((g, i) => {
+      d += g.getPath(cx, y, size).toPathData(3);
+      cx += g.advanceWidth * size / f.unitsPerEm + tr;
+      if (i < glyphs.length - 1) cx += f.getKerningValue(g, glyphs[i + 1]) * size / f.unitsPerEm;
+    });
+    return { d, w: cx - x - (glyphs.length ? tr : 0) };
+  };
+  const ws = lines.map(l => glyphLine(l, 0, 0).w), maxW = Math.max(...ws, 1);
+  let d = '';
+  lines.forEach((l, i) => {
+    const x = align === 'center' ? (maxW - ws[i]) / 2 : align === 'right' ? maxW - ws[i] : 0;
+    d += glyphLine(l, x, (i + 1) * size * lh).d;
+  });
+  if (!d.trim()) return null;
+  return `<svg xmlns="http://www.w3.org/2000/svg"><path d="${d}"/></svg>`;
+}
+
+let timer = 0, firstFit = true;
+function rebuild(refit) {
+  clearTimeout(timer);
+  timer = setTimeout(() => {
+    const err = $('#err');
+    try {
+      const svg = state.src === 'svg' ? state.svgText : textSvg();
+      if (!svg) {
+        if (state.src === 'text' && !state.font) return; // 字型還在下載，載好會自己重建
+        throw new Error('請輸入文字');
+      }
+      const t0 = performance.now();
+      const res = buildMesh(svg, params(), LIBS);
+      res.ms = performance.now() - t0;
+      state.mesh = res; show(res); err.classList.add('hidden');
+      const { r } = modelSphere();
+      if (refit || firstFit) { fit(); firstFit = false; }
+      // 模型大小變很多（換檔、改寬度）時自動重新取景，保留目前的觀看方向，畫面才不會跑掉
+      else if (r > lastR * 1.4 || r < lastR / 1.4) look(camera.position.clone().sub(controls.target));
+    } catch (e) {
+      console.error(e); err.textContent = e.message; err.classList.remove('hidden');
+    }
+  }, 120);
+}
+
+document.querySelectorAll('[data-k]').forEach(el => el.addEventListener('input', () => rebuild(false)));
+['#txt', '#align', '#lineH', '#track'].forEach(s => $(s).addEventListener('input', () => rebuild(false)));
+
+function setMode(m) {
+  state.mode = m;
+  document.querySelectorAll('#modeTabs button').forEach(b => b.classList.toggle('on', b.dataset.mode === m));
+  $('#blockOpts').classList.toggle('hidden', m === 'extrude');
+  $('#rowDepth').classList.toggle('hidden', m !== 'cut');
+  $('#cutHint').classList.toggle('hidden', m !== 'cut');
+  $('#rowH').classList.toggle('hidden', m === 'cut');
+  $('#rowH span').textContent = m === 'emboss' ? '浮雕高度 (mm)' : '擠出高度 (mm)';
+  rebuild(true);
+}
+document.querySelectorAll('#modeTabs button').forEach(b => b.onclick = () => setMode(b.dataset.mode));
+
+function setSrc(s) {
+  state.src = s;
+  document.querySelectorAll('#srcTabs button').forEach(b => b.classList.toggle('on', b.dataset.src === s));
+  $('#srcSvg').classList.toggle('hidden', s !== 'svg');
+  $('#srcText').classList.toggle('hidden', s !== 'text');
+  rebuild(true);
+}
+document.querySelectorAll('#srcTabs button').forEach(b => b.onclick = () => setSrc(b.dataset.src));
+
+// SVG 載入
+function loadSvgFile(file) {
+  if (!file) return;
+  file.text().then(t => { state.svgText = t; state.name = file.name.replace(/\.svg$/i, ''); setSrc('svg'); });
+}
+const drop = $('#drop');
+drop.onclick = () => $('#svgFile').click();
+$('#svgFile').onchange = e => loadSvgFile(e.target.files[0]);
+['dragover', 'dragenter'].forEach(ev => document.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('hover'); }));
+['dragleave', 'drop'].forEach(ev => document.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('hover'); }));
+document.addEventListener('drop', e => {
+  const f = [...e.dataTransfer.files];
+  const svg = f.find(x => /\.svg$/i.test(x.name));
+  if (svg) loadSvgFile(svg);
+});
+document.addEventListener('paste', e => {
+  const t = e.clipboardData.getData('text');
+  if (t && t.includes('<svg') && document.activeElement.tagName !== 'TEXTAREA') { state.svgText = t; state.name = 'pasted'; setSrc('svg'); }
+});
+
+// 字型
+// 內建字型：沿用雷雕網站的 default-font-*.js，用到才載入
+const FONT_FILES = { JF: 'default-font-jf.js', MOBO: 'default-font-mobo.js', CHENYU: 'default-font-chenyu.js', WANWAN: 'default-font-wanwan.js' };
+const fontCache = {};
+function loadScript(src) {
+  return new Promise((ok, bad) => {
+    const s = document.createElement('script'); s.src = src; s.onload = ok;
+    s.onerror = () => bad(new Error('下載失敗：' + src)); document.head.appendChild(s);
+  });
+}
+async function useFont(key) {
+  const label = $('#fontSel').selectedOptions[0].textContent;
+  try {
+    if (!fontCache[key]) {
+      state.font = null;
+      $('#fontMsg').textContent = '下載字型中：' + label + ' …';
+      if (typeof DEFAULT_FONTS === 'undefined') throw new Error('找不到 default-fonts.js');
+      if (!DEFAULT_FONTS[key]) await loadScript(FONT_FILES[key]);
+      const b64 = DEFAULT_FONTS[key].split(',')[1], bin = atob(b64), u8 = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+      fontCache[key] = opentype.parse(u8.buffer);
+    }
+    if ($('#fontSel').value !== key) return; // 下載期間又換了字型
+    state.font = fontCache[key]; state.name = label.replace(/（.*$/, '');
+    checkGlyphs();
+    rebuild(true);
+  } catch (e) { $('#fontMsg').textContent = '字型載入失敗：' + e.message; }
+}
+function checkGlyphs() { // 缺字提醒（灣灣是簡體字型，部分繁體字沒有）
+  if (!state.font) return;
+  const miss = [...new Set([...$('#txt').value].filter(ch => ch.trim() && state.font.charToGlyphIndex(ch) === 0))];
+  $('#fontMsg').innerHTML = miss.length
+    ? `<span style="color:var(--bad)">這個字型缺字：${miss.join(' ')}（會變空白），請換字型。</span>`
+    : '已載入：' + $('#fontSel').selectedOptions[0].textContent;
+}
+$('#fontSel').onchange = () => useFont($('#fontSel').value);
+$('#txt').addEventListener('input', checkGlyphs);
+
+// 匯出
+function download(data, name, type) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([data], { type })); a.download = name; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+}
+const fname = ext => `${state.name}-${state.mode}.${ext}`.replace(/[\\/:*?"<>|]/g, '_');
+$('#dlStl').onclick = () => state.mesh && download(toSTL(state.mesh.V, state.mesh.F), fname('stl'), 'model/stl');
+$('#dlObj').onclick = () => state.mesh && download(toOBJ(state.mesh.V, state.mesh.F), fname('obj'), 'text/plain');
+
+$('#wireBtn').onclick = () => {
+  state.wire = !state.wire; $('#wireBtn').textContent = '布線：' + (state.wire ? '開' : '關');
+  group.children.forEach(o => { if (o.isLineSegments) o.visible = state.wire; });
+};
+$('#fitBtn').onclick = fit;
+$('#orthoBtn').onclick = () => setOrtho(camera !== ortho);
+document.querySelectorAll('#viewBtns [data-view]').forEach(b => b.onclick = () => setView(b.dataset.view));
+renderer.domElement.addEventListener('dblclick', fit);
+// 快捷鍵（跟 Blender 一樣）：1 前 / 3 右 / 7 上，Ctrl 反向；5 透視↔正交；Home 或 . 置中
+document.addEventListener('keydown', e => {
+  if (/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) return;
+  const k = e.code.replace(/^(Numpad|Digit)/, '');
+  const map = { '1': e.ctrlKey ? 'back' : 'front', '3': e.ctrlKey ? 'left' : 'right', '7': e.ctrlKey ? 'bottom' : 'top' };
+  if (map[k]) { e.preventDefault(); setView(map[k]); }
+  else if (k === '5') setOrtho(camera !== ortho);
+  else if (e.code === 'Home' || e.code === 'NumpadDecimal' || e.code === 'Period') fit();
+});
+
+// 切到文字分頁才下載字型
+const _setSrc = setSrc;
+document.querySelectorAll('#srcTabs button').forEach(b => b.onclick = () => {
+  _setSrc(b.dataset.src);
+  if (b.dataset.src === 'text' && !state.font) useFont($('#fontSel').value);
+});
+
+rebuild(true);
+</script>
+</body>
+</html>
