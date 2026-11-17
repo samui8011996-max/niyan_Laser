@@ -225,6 +225,12 @@
     box-shadow:0 0 0 1px var(--border),0 6px 20px rgba(0,0,0,.35)}
   .paper-sheet.label-size{width:100mm;height:150mm}
   .paper-sheet.card-size{width:150mm;height:100mm}
+  /* 標籤文字積木:點一下就插入到游標位置 */
+  .word-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+  .word-chips button{background:var(--panel2);color:var(--text);border:1px solid var(--border);border-radius:999px;
+    padding:4px 11px;font-size:12.5px;cursor:pointer;font-family:inherit}
+  .word-chips button:hover{border-color:var(--gold);color:var(--gold)}
+  .word-chips button.clear{color:var(--muted)}
   .label-row-list{position:absolute;inset:0;display:flex;flex-direction:column}
   .label-row-list .lr{flex:1;display:flex;align-items:center;justify-content:center;
     font-family:'PingFang TC','Microsoft JhengHei',sans-serif;font-weight:900;color:#111;
@@ -498,6 +504,14 @@
           <div class="blk">
             <label>標籤文字(每一行都印這段文字)</label>
             <input id="labelText" type="text" value="黑面琵鷺-40　封條" placeholder="要印在每一行的文字">
+            <div class="word-chips" id="labelChips">
+              <button type="button">一般熊</button>
+              <button type="button">棒球熊</button>
+              <button type="button">黑面琵鷺</button>
+              <button type="button">精油</button>
+              <button type="button">封條</button>
+              <button type="button" class="clear" data-clear>清空</button>
+            </div>
           </div>
           <div class="blk">
             <label>行數</label>
@@ -2812,6 +2826,23 @@ function printPaper(){
 
 document.getElementById("paperModeChips").querySelectorAll(".btn-sm").forEach(btn => {
   btn.addEventListener("click", () => switchPaperMode(btn.dataset.mode));
+});
+/* 標籤文字積木:插在游標位置;前面已經有字就自動補一個全形空白分隔 */
+document.getElementById("labelChips").addEventListener("click", e => {
+  const btn = e.target.closest("button"); if (!btn) return;
+  const inp = document.getElementById("labelText");
+  if (btn.hasAttribute("data-clear")) {
+    inp.value = "";
+  } else {
+    const s = inp.selectionStart ?? inp.value.length, en = inp.selectionEnd ?? s;
+    const before = inp.value.slice(0, s), after = inp.value.slice(en);
+    const word = (before && !/\s$/.test(before) ? "　" : "") + btn.textContent;
+    const tail = after && !/^\s/.test(after) ? "　" : "";
+    inp.value = before + word + tail + after;
+    const pos = before.length + word.length;
+    inp.focus(); inp.setSelectionRange(pos, pos);
+  }
+  renderPaperPreview();
 });
 ["labelText","labelRows"].forEach(id => {
   document.getElementById(id).addEventListener("input", renderPaperPreview);
