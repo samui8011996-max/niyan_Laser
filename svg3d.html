@@ -621,6 +621,7 @@ const ortho = new THREE.OrthographicCamera(-1, 1, 1, -1, -100000, 100000);
 let camera = persp;
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
+controls.enableZoom = false; // 滾輪縮放改用下面自己寫的（固定步幅＋距離上下限）
 scene.add(new THREE.HemisphereLight(0xffffff, 0x404048, 1.6));
 const dl = new THREE.DirectionalLight(0xffffff, 1.6); dl.position.set(1, 2, 1.5); scene.add(dl);
 const dl2 = new THREE.DirectionalLight(0xffffff, 0.5); dl2.position.set(-1.5, 0.5, -1); scene.add(dl2);
@@ -892,6 +893,22 @@ $('#fitBtn').onclick = fit;
 $('#orthoBtn').onclick = () => setOrtho(camera !== ortho);
 document.querySelectorAll('#viewBtns [data-view]').forEach(b => b.onclick = () => setView(b.dataset.view));
 renderer.domElement.addEventListener('dblclick', fit);
+// 滾輪縮放：每一格固定 10%，距離限制在模型大小的 0.4～8 倍（正交：放大 0.3～6 倍）
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+renderer.domElement.addEventListener('wheel', e => {
+  e.preventDefault();
+  if (!e.deltaY) return;
+  const px = e.deltaMode === 1 ? e.deltaY * 33 : e.deltaMode === 2 ? e.deltaY * 400 : e.deltaY;
+  const f = Math.pow(1.1, clamp(px / 100, -1, 1)); // 一格滾輪 ≈ 100px → 10%；觸控板小幅滑動就小幅縮放
+  if (camera === ortho) {
+    ortho.zoom = clamp(ortho.zoom / f, 0.3, 6); ortho.updateProjectionMatrix();
+  } else {
+    const { r } = modelSphere();
+    const off = camera.position.clone().sub(controls.target);
+    const d = clamp(off.length() * f, r * 0.4, r * 8);
+    camera.position.copy(controls.target).addScaledVector(off.normalize(), d);
+  }
+}, { passive: false });
 // 快捷鍵（跟 Blender 一樣）：1 前 / 3 右 / 7 上，Ctrl 反向；5 透視↔正交；Home 或 . 置中
 document.addEventListener('keydown', e => {
   if (/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) return;
