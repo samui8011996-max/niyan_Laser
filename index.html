@@ -22,6 +22,7 @@
 <script src="default-library.js"></script>
 <script src="default-templates.js"></script>
 <script src="default-zodiac-cards.js"></script>
+<script src="default-xmas.js"></script>
 <script src="default-fonts.js"></script>
 <script src="default-font-mobo.js"></script>
 <script src="default-font-jf.js"></script>
@@ -844,6 +845,7 @@ const FILENAME_RULES = {
   "胖胖招財貓": {tag: (o,size) => (o.text ? "雷雕" : "木片")+size, fields: o => [o.text, o.color]},
   "星座貓雷雕": {tag: (o,size) => "星座貓雷雕"+size, fields: o => [o.color, o.zodiac, o.text]},
   "星座小卡":   {tag: () => "星座小卡", fields: o => [o.zodiac, o.text]},
+  "聖誕雷雕":   {tag: () => "聖誕雷雕", fields: o => [o.pattern]},
 };
 /* ── 星座小卡(星座胖胖貓×永生花玻璃球附贈的 90×54mm 雙面雷雕小卡) ──────────────
    正面:星座符號＋客人刻印文字(英文名字或生日,限 10 字)＋底線＋英文祝賀語
@@ -913,7 +915,21 @@ function buildCardSvg(order, side, s){
   return {svg, w:CARD_PX.w, h:CARD_PX.h, textSize, font};
 }
 
+/* 聖誕雷雕:固定圖案(圖案+Merry Christmas),只從「新增雷雕項目」手動加入,品項開頭固定是【聖誕雷雕】 */
+const XMAS_TAG = "【聖誕雷雕】";
+function buildXmasSvg(order, s){
+  const src = typeof XMAS_DESIGNS !== "undefined" && XMAS_DESIGNS[order.pattern];
+  const info = src && extractSvgInfo(src);
+  if (!info) return null;
+  const vb = info.viewBox.split(/\s+/).map(Number);
+  const k = 96/25.4/5;   // 原稿 5 單位=1mm
+  const w = vb[2]*k, h = vb[3]*k;
+  const bg = s.bgTransparent ? "" : '<rect width="100%" height="100%" fill="#ffffff"/>';
+  return {svg:'<svg xmlns="http://www.w3.org/2000/svg" width="'+w+'" height="'+h+'" viewBox="'+info.viewBox+'">'+bg+info.inner+'</svg>', w, h};
+}
+
 function fnCategoryFor(rowText, templateKey, parsed){
+  if (rowText.includes(XMAS_TAG)) return "聖誕雷雕";
   if (isCardProduct(rowText) && cardZodiacKey(parsed)) return "星座小卡";
   if (templateKey === "辦公室一對" || templateKey === "辦公室單隻") return templateKey;
   if (rowText.includes("胖胖貓") && rowText.includes("一對")) return "招福貓對";
@@ -1555,6 +1571,8 @@ const ADD_PRODUCTS = [
    build: v => "【辦公室語錄】胖胖貓(中)【雷雕】 "+v.kind+": "+v.color+" 刻印圖案: "+v.pattern},
   {label:"星座小卡(永生花玻璃球)", fields:[{k:"zodiac", label:"星座/圖案", opts:addCardZodiacs}], maxText:CARD_MAX_CHARS,
    build: v => "【送禮首選】星座開運胖胖貓X永生花玻璃球【花色自選】 星座: "+v.zodiac},
+  {label:"聖誕雷雕(Merry Christmas)", noText:true, fields:[{k:"pattern", label:"圖案", opts:() => typeof XMAS_DESIGNS !== "undefined" ? Object.keys(XMAS_DESIGNS) : []}],
+   build: v => XMAS_TAG+"Merry Christmas 刻印圖案: "+v.pattern},
 ];
 const addEsc = t => String(t).replace(/&/g,"&amp;").replace(/"/g,"&quot;").replace(/</g,"&lt;");
 function renderAddFields(){
@@ -1568,6 +1586,8 @@ function renderAddFields(){
       + opts.map(o => '<option'+((prev[f.k] ?? f.def) === o ? ' selected' : '')+'>'+addEsc(o)+'</option>').join("") + '</select>';
   }).join("");
   const textIn = document.getElementById("addText");
+  textIn.style.display = p.noText ? "none" : "";   // 聖誕雷雕是固定圖,不用填字
+  if (p.noText) textIn.value = "";
   if (p.maxText){ textIn.maxLength = p.maxText; textIn.placeholder = "刻印文字(最多 "+p.maxText+" 字)"; }
   else { textIn.removeAttribute("maxlength"); textIn.placeholder = "刻印文字"; }
   updateAddPreview();
@@ -1966,6 +1986,11 @@ function renderSettings(){
 /* ── 結果 UI ── */
 function currentResults(){
   return visibleOrders().flatMap(o => {
+    if (o.fnCategory === "聖誕雷雕"){
+      const x = buildXmasSvg(o, settings);
+      return [{order:o, icon:null, svg:x ? x.svg : "", w:x ? x.w : 1, h:x ? x.h : 1, fixed:true, template:o.pattern+" Merry Christmas"}
+              ].map(r => x ? r : {...r, missing:o.pattern || "聖誕圖案"});
+    }
     /* 星座小卡:一筆訂單 = 正面(客人文字)＋背面(中文固定面)兩張 */
     if (o.fnCategory === "星座小卡"){
       return ["front","back"].map(side => {
@@ -2015,7 +2040,7 @@ function render(){
   document.getElementById("dlAllBtn").style.display = rs.length ? "" : "none";
   document.getElementById("emptyHint").style.display = rs.length ? "none" : "";
 
-  const missing = [...new Set(rs.filter(r => r.missing).map(r => r.order.zodiac))];
+  const missing = [...new Set(rs.filter(r => r.missing).map(r => r.order.zodiac || r.missing))];
   const missingTpl = [...new Set(rs.filter(r => r.missingTemplate).map(r => r.missingTemplate))];
   const msgs = [];
   if (missing.length) msgs.push("素材庫缺少圖案:"+missing.join("、"));
@@ -2025,17 +2050,17 @@ function render(){
   const grid = document.getElementById("resultGrid");
   grid.innerHTML = "";
   rs.forEach((r, idx) => {
-    const isEditing = editingCardId === r.order.id && r.cardSide !== "back";
+    const isEditing = editingCardId === r.order.id && r.cardSide !== "back" && !r.fixed;
     const card = document.createElement("div");
     card.className = "r-card" + ((r.missing || r.missingTemplate || r.badGlyphs || r.tooLong) ? " missing" : "") + (isEditing ? " editing" : "");
     const prev = document.createElement("div");
     prev.className = "preview"; prev.innerHTML = r.svg;
     const info = document.createElement("div");
     info.className = "info";
-    const meta = [r.template || r.order.zodiac, r.order.color, r.order.qty>1 ? "x"+r.order.qty : ""].filter(Boolean).join(" · ");
+    const meta = [r.fixed ? r.order.pattern : r.template || r.order.zodiac, r.order.color, r.order.qty>1 ? "x"+r.order.qty : ""].filter(Boolean).join(" · ");
     const idTag = r.order.orderId ? " #"+r.order.orderId.slice(-6) : "";
     info.innerHTML = '<div class="t"></div><div class="m"></div>';
-    info.querySelector(".t").textContent = r.cardSide === "back" ? "(中文面·固定)" : r.order.text || (r.template ? "("+r.template+" 無文字)" : (r.order.zodiac ? "("+r.order.zodiac+" 僅圖案)" : "(無文字)"));
+    info.querySelector(".t").textContent = r.cardSide === "back" ? "(中文面·固定)" : r.fixed ? "Merry Christmas" : r.order.text || (r.template ? "("+r.template+" 無文字)" : (r.order.zodiac ? "("+r.order.zodiac+" 僅圖案)" : "(無文字)"));
     info.querySelector(".m").innerHTML = esc(meta) + "<br>" + esc(r.order.name + idTag);
 
     const warn = [];
